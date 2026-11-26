@@ -107,7 +107,13 @@ public sealed class DownloadStateMachineTests
         Assert.Equal("a.bin", item.FileName);
         Assert.DoesNotContain("secret", item.DisplayUrl);
         Assert.Null((item with { TotalBytes = null }).Fraction);
-        Assert.False((item with { Kind = DownloadKind.Browser, BrowserCanResume = false }).CanPause);
+
+        // WebView2 reports CanResume = false while a download runs; Pause must still be offered (your bug report, 4b).
+        var browser = item with { Kind = DownloadKind.Browser, BrowserCanResume = false };
+        Assert.True(browser.CanPause);
+        Assert.True((browser with { State = DownloadState.Paused }).CanResumeNow); // the user paused it: always resumable
+        Assert.False((browser with { State = DownloadState.Interrupted }).CanResumeNow); // an error: needs CanResume
+        Assert.True((browser with { State = DownloadState.Interrupted, BrowserCanResume = true }).CanResumeNow);
     }
 }
 

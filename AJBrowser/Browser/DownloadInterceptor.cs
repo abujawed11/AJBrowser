@@ -55,7 +55,14 @@ public sealed class DownloadInterceptor
 
     public void Pause(long id) => Run(id, op => { if (op.State == CoreWebView2DownloadState.InProgress) op.Pause(); });
 
-    public void Resume(long id) => Run(id, op => { if (op.CanResume) op.Resume(); });
+    /// <summary>Continues a download the user paused (always allowed) or one interrupted by an error (only if CanResume).</summary>
+    public void Resume(long id) => Run(id, op =>
+    {
+        if (op.CanResume || (op.State == CoreWebView2DownloadState.Interrupted && op.InterruptReason == CoreWebView2DownloadInterruptReason.UserPaused))
+        {
+            op.Resume();
+        }
+    });
 
     /// <summary>Cancels; the runtime deletes its partial data.</summary>
     public void Cancel(long id) => Run(id, op => op.Cancel());

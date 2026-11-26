@@ -58,7 +58,10 @@ public sealed record DownloadItem
     /// <summary>App downloads: what the server said about resuming.</summary>
     public ResumeInfo? Resume { get; init; }
 
-    /// <summary>Browser downloads: the runtime says this one can be resumed (paused or interrupted).</summary>
+    /// <summary>
+    /// Browser downloads: the runtime says this one can be resumed. WebView2 only reports this once a download has
+    /// stopped (paused or interrupted); while it runs it's always false, so it must not decide whether Pause is offered.
+    /// </summary>
     public bool BrowserCanResume { get; init; }
 
     /// <summary>Current speed (smoothed), while downloading.</summary>
@@ -79,10 +82,18 @@ public sealed record DownloadItem
 
     public bool IsFinished => State is DownloadState.Completed or DownloadState.Failed or DownloadState.Cancelled or DownloadState.Interrupted;
 
-    public bool CanPause => State == DownloadState.Downloading && (Kind == DownloadKind.App || BrowserCanResume);
+    /// <summary>
+    /// Any running download can be paused, like in Chrome/Edge: Pause works on a running browser download (spike F5),
+    /// and whether it can continue is only known afterwards (<see cref="CanResumeNow"/>).
+    /// </summary>
+    public bool CanPause => State == DownloadState.Downloading;
 
-    public bool CanResumeNow => State is DownloadState.Paused or DownloadState.Interrupted
-                                && (Kind == DownloadKind.App || BrowserCanResume);
+    /// <summary>
+    /// A download the user paused can always continue (WebView2's Resume() works on user-paused downloads; a server
+    /// without range support makes it start over). One stopped by an error needs the runtime's CanResume.
+    /// </summary>
+    public bool CanResumeNow => State == DownloadState.Paused
+                                || (State == DownloadState.Interrupted && (Kind == DownloadKind.App || BrowserCanResume));
 
     public bool CanCancel => State is DownloadState.Queued or DownloadState.Downloading or DownloadState.Paused;
 

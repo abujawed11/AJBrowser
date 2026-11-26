@@ -857,6 +857,8 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | 2026-11-26 | Phase 4b: "Copy link" copies the full address for browser downloads and the shortened (redacted) one for app downloads | A browser download's link is the user's own (Chrome copies it in full); app downloads (detected media, Phase 5) often carry signed tokens |
 | 2026-11-26 | Phase 4b: Retry of a browser download opens its address in a new foreground tab and removes the old entry | WebView2 has no "download this URL" API, so only a navigation can restart it; a visible tab shows what happened if the link now leads to a page or an error. The blank tab left behind is closed automatically in 4c |
 | 2026-11-26 | Phase 4b: a browser download interrupted by network trouble, shutdown or a crash is **Interrupted** (Resume offered while the operation lives); disk, server and security failures are **Failed** | Matches the state model (Interrupted = outside the user's control, often resumable) |
+| 2026-11-26 | **Bug fix after 4b (your report):** Pause is offered on every running download, and a user-paused download can always be resumed; WebView2's `CanResume` only gates resuming after an *error* | `CanResume` is false while a download runs (WebView2 sets it only once a download has stopped), so the Pause button never appeared. `Resume()` works on user-paused downloads; without server range support it starts over (like Chrome) |
+| 2026-11-26 | Speed estimator keeps its newest sample in a field (O(1)) | LINQ `Last()` on a `Queue` walked every sample on every WebView2 progress event |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---

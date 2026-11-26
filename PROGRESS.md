@@ -163,7 +163,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 
 **Phase 4b checks** (F5, Debug). Not run by the agent, so this is the first real test. A good test file: any large public test download (for example a speed-test site's 100 MB file).
 1. **Download from a normal link** (same tab): Edge's own download bubble does **not** appear; instead AJBrowser's flyout opens under the ↓ button with the file, a progress bar and "x MB of y MB · speed · time left". The ↓ button shows a blue ring filling up while it runs. The file lands in your Downloads folder (or the folder from Settings) with its proper name; downloading it again gives `name (1).ext`.
-2. **Pause / Resume / Cancel** in the flyout or on the page: Pause → "Paused · …", Resume continues, Cancel → "Cancelled" and no partial file is left in the folder. (Some servers can't pause; then there's no Pause button.)
+2. **Pause / Resume / Cancel** in the flyout or on the page: every running download has a Pause button (fixed after your report: it was missing). Pause → "Paused · …", Resume continues (on a server without partial-download support it starts over, like Chrome), Cancel → "Cancelled" and no partial file is left in the folder.
 3. **Finished:** click the row in the flyout → the file opens; the folder button → Explorer opens with the file selected. Delete the file in Explorer, reopen the flyout → "Moved or deleted".
 4. **Downloads page:** Ctrl+J (or ⋯ → Downloads, or "Show all downloads"): every download, newest first; search filters by name or address; Copy link, Remove (file stays), Clear finished, Open folder all work.
 5. **Unknown size** (a server that doesn't send a size): the ring spins instead of filling; the text shows only the received amount.
