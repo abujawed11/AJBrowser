@@ -12,11 +12,12 @@ namespace AJBrowser.ViewModels;
 /// </summary>
 public sealed partial class DetectedMediaViewModel : ObservableObject
 {
-    private readonly Func<DetectedMediaViewModel, Task> _download;
+    private readonly Func<DetectedMediaViewModel, bool, Task> _download;
     private readonly Func<DetectedMedia, string> _name;
 
+    /// <param name="download">Starts the download; the flag asks where to save ("Save as…").</param>
     /// <param name="name">The file name it would be saved as (MediaFileNamer with the page title).</param>
-    public DetectedMediaViewModel(DetectedMedia media, Func<DetectedMediaViewModel, Task> download, Func<DetectedMedia, string> name)
+    public DetectedMediaViewModel(DetectedMedia media, Func<DetectedMediaViewModel, bool, Task> download, Func<DetectedMedia, string> name)
     {
         _download = download;
         _name = name;
@@ -83,7 +84,10 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private Task Download() => _download(this);
+    private Task Download() => _download(this, false);
+
+    [RelayCommand]
+    private Task SaveAs() => _download(this, true);
 
     private static string FormatDuration(double seconds)
     {

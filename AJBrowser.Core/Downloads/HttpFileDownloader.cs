@@ -200,6 +200,12 @@ public sealed class HttpFileDownloader
                 return new Step(StepKind.Retry, existing, null, learned, $"The server is busy or failing (HTTP {status}).");
             }
 
+            if (status is 401 or 403 or 410)
+            {
+                // Video sites sign their links and the signature expires (plan Phase 5): say what to do about it.
+                return new Step(StepKind.Fatal, existing, null, learned, $"The link has expired or access was refused (HTTP {status}). Play the video again, then Retry.");
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 return new Step(StepKind.Fatal, existing, null, learned, $"The server refused the download (HTTP {status}).");

@@ -89,6 +89,12 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
     /// <summary>The folder new downloads go to.</summary>
     public string DownloadFolder => _settings.Current.DownloadFolder ?? KnownFolders.Downloads;
 
+    /// <summary>
+    /// Set by the main window: before Retry/Resume of an app (video) download, look for a fresh address of the same file
+    /// in the open tabs (signed video links expire; replaying the video gives a new one).
+    /// </summary>
+    public Func<DownloadItem, Task>? RefreshSourceBeforeRetry { get; set; }
+
     /// <summary>A page started a download: the window shows the flyout.</summary>
     public event EventHandler? DownloadStarted;
 
@@ -193,7 +199,7 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
     {
         if (item.Item.Kind == DownloadKind.App)
         {
-            _manager.Resume(item.Id);
+            _ = RefreshThenAsync(item.Item, () => _manager.Resume(item.Id));
         }
         else
         {
@@ -222,7 +228,7 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
     {
         if (item.Item.Kind == DownloadKind.App)
         {
-            _manager.Retry(item.Id);
+            _ = RefreshThenAsync(item.Item, () => _manager.Retry(item.Id));
             return;
         }
 
@@ -231,6 +237,23 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
             _ = RemoveAsync(item);
             OpenUrlRequested?.Invoke(this, uri);
         }
+    }
+
+    private async Task RefreshThenAsync(DownloadItem item, Action then)
+    {
+        try
+        {
+            if (RefreshSourceBeforeRetry is { } refresh)
+            {
+                await refresh(item);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("Looking for a fresh video link failed", ex);
+        }
+
+        then();
     }
 
     /// <summary>

@@ -55,6 +55,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.CloseRequested += OnBrowserCloseRequested;
         _browser.OnlyDownloaded += OnBrowserOnlyDownloaded;
         _browser.MediaChanged += OnBrowserMediaChanged;
+        _browser.DownloadVideoRequested += OnBrowserDownloadVideoRequested;
         _services.Bookmarks.Changed += OnBookmarksChanged;
         _services.Favicons.Changed += OnFaviconsChanged;
     }
@@ -783,7 +784,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         OnPropertyChanged(nameof(MediaButtonToolTip));
     }
 
-    private async Task DownloadMediaAsync(DetectedMediaViewModel row)
+    private async Task DownloadMediaAsync(DetectedMediaViewModel row, bool saveAs)
     {
         if (!row.CanDownload)
         {
@@ -793,15 +794,53 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         row.IsStarting = true;
         try
         {
-            var page = Uri.TryCreate(_browser.Url, UriKind.Absolute, out var pageUri) ? pageUri : null;
-            var item = await _services.MediaDownloads.StartAsync(row.Media, Title, page, _browser.GetCookieHeaderAsync);
-            row.WasQueued = item is not null;
+            var item = await _services.MediaDownloads.StartAsync(row.Media, Title, PageUri, _browser.GetCookieHeaderAsync, saveAs);
+            row.WasQueued = item is not null || row.WasQueued;
         }
         finally
         {
             row.IsStarting = false;
         }
     }
+
+    private Uri? PageUri => Uri.TryCreate(_browser.Url, UriKind.Absolute, out var pageUri) ? pageUri : null;
+
+    /// <summary>Right-click → "Download video": the detected entry if we have it (headers, real name), else just the address.</summary>
+    private async void OnBrowserDownloadVideoRequested(object? sender, Uri source)
+    {
+        try
+        {
+            var key = Core.Media.MediaClassifier.KeyOf(source);
+            var media = _browser.Media.Items.FirstOrDefault(m => m.Key == key) ?? FromAddress(source);
+            await _services.MediaDownloads.StartAsync(media, Title, PageUri, _browser.GetCookieHeaderAsync);
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Error("Download video (context menu) failed", ex);
+        }
+    }
+
+    /// <summary>A media file we only know by its address (right-clicked before any response was seen).</summary>
+    private static Core.Media.DetectedMedia FromAddress(Uri source)
+    {
+        var guess = Core.Media.MediaClassifier.Classify(new Core.Media.MediaObservation(source, 200, null, null, null, "Media"));
+        return new Core.Media.DetectedMedia
+        {
+            Id = 0,
+            Kind = Core.Media.MediaKind.Direct,
+            Key = Core.Media.MediaClassifier.KeyOf(source),
+            Url = source,
+            Container = guess.Container,
+            IsAudioOnly = guess.IsAudioOnly,
+        };
+    }
+
+    /// <summary>Video detection was switched off in Settings: hide the button and forget the list.</summary>
+    public void ClearMedia() => _browser.ClearMedia();
+
+    /// <summary>The newest address this tab saw for a media file (by its key), with a way to get this tab's cookies for it.</summary>
+    public (Core.Media.DetectedMedia Media, Func<Uri, Task<string?>> Cookies)? FindMedia(string key) =>
+        _browser.Media.Items.FirstOrDefault(m => m.Key == key) is { } media ? (media, _browser.GetCookieHeaderAsync) : null;
 
     private void SetAddress(string text)
     {
@@ -829,6 +868,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.CloseRequested -= OnBrowserCloseRequested;
         _browser.OnlyDownloaded -= OnBrowserOnlyDownloaded;
         _browser.MediaChanged -= OnBrowserMediaChanged;
+        _browser.DownloadVideoRequested -= OnBrowserDownloadVideoRequested;
         _services.Bookmarks.Changed -= OnBookmarksChanged;
         _services.Favicons.Changed -= OnFaviconsChanged;
         Suggestions.Dispose();

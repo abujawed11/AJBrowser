@@ -56,7 +56,7 @@ public sealed class AppServices : IDisposable
             DownloadManager, namer, settings, AskSavePath, () => KnownFolders.Downloads, CreateLogger(nameof(DownloadInterceptor)));
         Downloads = new DownloadsViewModel(DownloadManager, DownloadInterceptor, shell, settings, CreateLogger(nameof(DownloadsViewModel)));
 
-        MediaDownloads = new MediaDownloadService(DownloadManager, _namer, settings, CreateLogger(nameof(MediaDownloadService)));
+        MediaDownloads = new MediaDownloadService(DownloadManager, _namer, settings, AskSavePath, CreateLogger(nameof(MediaDownloadService)));
 
         _tabServices = new TabServices(
             AddressResolver,
@@ -151,7 +151,7 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Creates a tab (WebView wrapper + its view model). Not started yet: call <see cref="TabViewModel.StartAsync"/>.</summary>
     public TabViewModel CreateTab() =>
-        new(new BrowserTab(Browser, Extensions, DownloadInterceptor, Theme, CreateLogger(nameof(BrowserTab))), _tabServices);
+        new(new BrowserTab(Browser, Extensions, DownloadInterceptor, Theme, () => Settings.Current.DetectVideos, CreateLogger(nameof(BrowserTab))), _tabServices);
 
     /// <summary>Creates the view model of an internal page for the tab that will show it.</summary>
     private IInternalPage CreatePage(InternalPage page, IPageHost host) => page switch

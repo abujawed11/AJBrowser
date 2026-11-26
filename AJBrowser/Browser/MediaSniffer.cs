@@ -48,13 +48,16 @@ public sealed class MediaSniffer : IDisposable
     private static readonly TimeSpan NotifyInterval = TimeSpan.FromMilliseconds(500);
 
     private readonly AppLogger _log;
+    private readonly Func<bool> _enabled;
     private readonly HashSet<string> _nativeKeys = new(StringComparer.Ordinal);
     private readonly DispatcherTimer _notifyTimer;
     private CoreWebView2? _core;
 
-    public MediaSniffer(AppLogger log)
+    /// <param name="enabled">Settings → "Detect videos on pages"; checked on every response, so switching is immediate.</param>
+    public MediaSniffer(AppLogger log, Func<bool> enabled)
     {
         _log = log;
+        _enabled = enabled;
         _notifyTimer = new DispatcherTimer { Interval = NotifyInterval };
         _notifyTimer.Tick += (_, _) =>
         {
@@ -116,6 +119,15 @@ public sealed class MediaSniffer : IDisposable
         Changed = null;
     }
 
+    /// <summary>Forgets everything found (detection was switched off).</summary>
+    public void Clear()
+    {
+        _nativeKeys.Clear();
+        Store.Reset();
+        _notifyTimer.Stop();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     private async Task AddHintScriptAsync(CoreWebView2 core)
     {
         try
@@ -148,6 +160,11 @@ public sealed class MediaSniffer : IDisposable
 
     private void OnResponseReceived(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs e)
     {
+        if (!_enabled())
+        {
+            return;
+        }
+
         try
         {
             var request = e.Request;
@@ -192,6 +209,11 @@ public sealed class MediaSniffer : IDisposable
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        if (!_enabled())
+        {
+            return;
+        }
+
         string? message;
         try
         {

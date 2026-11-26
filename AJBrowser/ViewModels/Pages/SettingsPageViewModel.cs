@@ -103,6 +103,13 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
         set => _settings.Update(s => s with { AskWhereToSave = value });
     }
 
+    /// <summary>Look for videos on pages (the toolbar's film button). Switching off also clears what was found.</summary>
+    public bool DetectVideos
+    {
+        get => _settings.Current.DetectVideos;
+        set => _settings.Update(s => s with { DetectVideos = value });
+    }
+
     /// <summary>Choices for "Simultaneous downloads": 1 to 10.</summary>
     public IReadOnlyList<int> ConcurrentDownloadChoices { get; } =
         Enumerable.Range(AppSettings.MinConcurrentDownloads, AppSettings.MaxConcurrentDownloadsLimit - AppSettings.MinConcurrentDownloads + 1).ToList();
@@ -221,7 +228,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
                      {
                          nameof(IsThemeSystem), nameof(IsThemeLight), nameof(IsThemeDark), nameof(ShowBookmarksBar),
                          nameof(IsStartupHomePage), nameof(IsStartupRestore), nameof(DownloadFolderText),
-                         nameof(HasCustomDownloadFolder), nameof(AskWhereToSave), nameof(MaxConcurrentDownloads),
+                         nameof(HasCustomDownloadFolder), nameof(AskWhereToSave), nameof(MaxConcurrentDownloads), nameof(DetectVideos),
                      })
             {
                 OnPropertyChanged(name);

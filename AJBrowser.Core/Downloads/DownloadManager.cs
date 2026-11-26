@@ -165,6 +165,29 @@ public sealed class DownloadManager
         Pump();
     }
 
+    /// <summary>
+    /// Gives a stopped app download a fresh address and request headers (plan Phase 5: signed video links expire, and
+    /// replaying the video gives a new one for the same file). Only for app downloads that aren't running; the partial
+    /// file is kept and resumed only if the server confirms it's the same file (ETag / Last-Modified). Returns true if done.
+    /// </summary>
+    public bool ReplaceSource(long id, Uri url, IReadOnlyDictionary<string, string>? headers)
+    {
+        lock (_lock)
+        {
+            if (!_entries.TryGetValue(id, out var entry) || entry.Item.Kind != DownloadKind.App || entry.Cts is not null
+                || entry.Item.State is DownloadState.Downloading or DownloadState.Queued or DownloadState.Completed)
+            {
+                return false;
+            }
+
+            entry.Headers = headers;
+            entry.Item = entry.Item with { SourceUrl = url.AbsoluteUri };
+            Save(entry.Item);
+            Raise(entry.Item);
+            return true;
+        }
+    }
+
     /// <summary>Starts a failed, cancelled or interrupted app download again.</summary>
     public void Retry(long id)
     {
@@ -589,7 +612,7 @@ public sealed class DownloadManager
         public TransferRateEstimator Rate { get; } = new();
         public CancellationTokenSource? Cts { get; set; }
         public StopReason StopReason { get; set; }
-        public IReadOnlyDictionary<string, string>? Headers { get; init; }
+        public IReadOnlyDictionary<string, string>? Headers { get; set; }
         public DateTime LastEvent { get; set; }
         public DateTime LastSave { get; set; }
     }

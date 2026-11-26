@@ -48,14 +48,14 @@ public sealed class BrowserTab : IDisposable
     private bool _hasCommittedPage;
     private bool _disposed;
 
-    public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, DownloadInterceptor downloads, ThemeService theme, AppLogger log)
+    public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, DownloadInterceptor downloads, ThemeService theme, Func<bool> detectVideos, AppLogger log)
     {
         _environment = environment;
         _extensions = extensions;
         _downloads = downloads;
         _theme = theme;
         _log = log;
-        _media = new MediaSniffer(log);
+        _media = new MediaSniffer(log, detectVideos);
         _media.Changed += OnMediaChanged;
         _theme.ThemeChanged += OnThemeChanged;
     }
@@ -265,6 +265,12 @@ public sealed class BrowserTab : IDisposable
     }
 
     private void OnMediaChanged(object? sender, EventArgs e) => MediaChanged?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Video detection was switched off: drop what was found.</summary>
+    public void ClearMedia() => _media.Clear();
+
+    /// <summary>"Download video" was chosen on a &lt;video&gt;/&lt;audio&gt; element with a real (non-blob) address.</summary>
+    public event EventHandler<Uri>? DownloadVideoRequested;
 
     // ---------------------------------------------------------------- creating the WebView
 
@@ -632,6 +638,8 @@ public sealed class BrowserTab : IDisposable
         }
 
         var target = e.ContextMenuTarget;
+        AddDownloadVideoItem(target, items);
+
         if (_attachedEnvironment is null
             || !target.HasLinkUri
             || !Uri.TryCreate(target.LinkUri, UriKind.Absolute, out var link)
@@ -643,6 +651,28 @@ public sealed class BrowserTab : IDisposable
         var item = _attachedEnvironment.CreateContextMenuItem("Open link in new tab", null, CoreWebView2ContextMenuItemKind.Command);
         item.CustomItemSelected += (_, _) => OpenInNewTabRequested?.Invoke(this, link);
         items.Insert(insertAt, item);
+    }
+
+    /// <summary>
+    /// Right-click on a video (or audio) element whose source is a real http(s) address: "Download video" downloads it
+    /// with AJBrowser's own downloader (headers and cookies like the page). Blob sources (streaming players) get nothing:
+    /// they aren't files (plan §6.3).
+    /// </summary>
+    private void AddDownloadVideoItem(CoreWebView2ContextMenuTarget target, IList<CoreWebView2ContextMenuItem> items)
+    {
+        if (_attachedEnvironment is null
+            || target.Kind is not (CoreWebView2ContextMenuTargetKind.Video or CoreWebView2ContextMenuTargetKind.Audio)
+            || !target.HasSourceUri
+            || !Uri.TryCreate(target.SourceUri, UriKind.Absolute, out var source)
+            || (source.Scheme != Uri.UriSchemeHttps && source.Scheme != Uri.UriSchemeHttp))
+        {
+            return;
+        }
+
+        var label = target.Kind == CoreWebView2ContextMenuTargetKind.Audio ? "Download audio with AJBrowser" : "Download video with AJBrowser";
+        var item = _attachedEnvironment.CreateContextMenuItem(label, null, CoreWebView2ContextMenuItemKind.Command);
+        item.CustomItemSelected += (_, _) => _host.Dispatcher.BeginInvoke(() => DownloadVideoRequested?.Invoke(this, source));
+        items.Insert(0, item);
     }
 
     // ---------------------------------------------------------------- crashes

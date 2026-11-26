@@ -18,38 +18,55 @@ public sealed class MediaDownloadService
     private readonly DownloadManager _manager;
     private readonly FileNamer _namer;
     private readonly SettingsStore _settings;
+    private readonly Func<string, string, string?> _askSavePath;
     private readonly AppLogger _log;
 
-    public MediaDownloadService(DownloadManager manager, FileNamer namer, SettingsStore settings, AppLogger log)
+    /// <param name="askSavePath">The Save dialog (folder, suggested name) → chosen path or null; shared with browser downloads.</param>
+    public MediaDownloadService(DownloadManager manager, FileNamer namer, SettingsStore settings, Func<string, string, string?> askSavePath, AppLogger log)
     {
         _manager = manager;
         _namer = namer;
         _settings = settings;
+        _askSavePath = askSavePath;
         _log = log;
     }
 
     /// <param name="cookieHeader">Asks the tab's profile for the cookies it would send to a URL (null when there are none).</param>
-    public async Task<DownloadItem?> StartAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader)
+    /// <param name="saveAs">Ask where to save ("Save as…"); also asked when Settings → "Ask where to save" is on.</param>
+    public async Task<DownloadItem?> StartAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs = false)
     {
         if (media.Kind != MediaKind.Direct)
         {
             return null; // streams (HLS/DASH) come in Phases 6 and 7
         }
 
+        var name = MediaFileNamer.Suggest(media, pageTitle);
         var folder = _settings.Current.DownloadFolder ?? KnownFolders.Downloads;
-        string path;
         try
         {
             Directory.CreateDirectory(folder);
-            path = _namer.ReservePath(folder, MediaFileNamer.Suggest(media, pageTitle));
         }
         catch (Exception ex)
         {
             _log.Warn($"Download folder unavailable ({ex.GetType().Name}); using the Downloads folder instead");
             folder = KnownFolders.Downloads;
             Directory.CreateDirectory(folder);
-            path = _namer.ReservePath(folder, MediaFileNamer.Suggest(media, pageTitle));
         }
+
+        if (saveAs || _settings.Current.AskWhereToSave)
+        {
+            var chosen = _askSavePath(folder, name);
+            if (chosen is null)
+            {
+                return null; // cancelled in the dialog
+            }
+
+            // AJBrowser never overwrites a finished file (it writes .ajpart and renames): an existing name gets " (1)".
+            folder = Path.GetDirectoryName(chosen) ?? folder;
+            name = Path.GetFileName(chosen);
+        }
+
+        var path = _namer.ReservePath(folder, name);
 
         try
         {
@@ -65,5 +82,31 @@ public sealed class MediaDownloadService
             _log.Error("Could not start a video download", ex);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Before Retry/Resume of a video download: if an open tab has seen the same file again (same host and path, usually
+    /// with a new token after replaying), switch the download to that fresh address with that tab's headers and cookies.
+    /// Also when the address is unchanged: after an app restart the download has lost its headers and cookies (memory only).
+    /// </summary>
+    public async Task<bool> RefreshSourceAsync(DownloadItem item, Func<string, (DetectedMedia Media, Func<Uri, Task<string?>> Cookies)?> findInTabs)
+    {
+        if (item.Kind != DownloadKind.App || !Uri.TryCreate(item.SourceUrl, UriKind.Absolute, out var old)
+            || findInTabs(MediaClassifier.KeyOf(old)) is not { } found)
+        {
+            return false;
+        }
+
+        var cookies = await found.Cookies(found.Media.Url);
+        var headers = (found.Media.Request ?? RequestContext.FromObservedRequest([], null)).ToHeaders(cookies);
+        var replaced = _manager.ReplaceSource(item.Id, found.Media.Url, headers);
+        if (replaced)
+        {
+            _log.Info(found.Media.Url.AbsoluteUri == old.AbsoluteUri
+                ? $"Video download refreshed its headers and cookies from an open tab: {found.Media.DisplayUrl}"
+                : $"Video download got a fresh link from an open tab: {found.Media.DisplayUrl}");
+        }
+
+        return replaced;
     }
 }

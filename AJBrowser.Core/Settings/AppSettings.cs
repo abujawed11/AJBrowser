@@ -52,6 +52,9 @@ public sealed record AppSettings
     /// <summary>Ask where to save each download (Phase 4).</summary>
     public bool AskWhereToSave { get; init; }
 
+    /// <summary>Look for videos on pages and offer them in the toolbar (Phase 5). On by default.</summary>
+    public bool DetectVideos { get; init; } = true;
+
     public const int MinConcurrentDownloads = 1;
     public const int MaxConcurrentDownloadsLimit = 10;
 

@@ -126,6 +126,16 @@
                     </DockPanel>
                     <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
                     <DockPanel>
+                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggleStyle}" VerticalAlignment="Center"
+                                      IsChecked="{Binding DetectVideos}" AutomationProperties.Name="Detect videos on pages" />
+                        <StackPanel>
+                            <TextBlock Text="Detect videos on pages" FontWeight="SemiBold" />
+                            <TextBlock Text="Shows a film button in the toolbar when a page has a video you can download."
+                                       Style="{StaticResource SecondaryTextStyle}" />
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
+                    <DockPanel>
                         <ComboBox DockPanel.Dock="Right" VerticalAlignment="Center" MinWidth="80"
                                   ItemsSource="{Binding ConcurrentDownloadChoices}"
                                   SelectedItem="{Binding MaxConcurrentDownloads}"

@@ -86,6 +86,9 @@ public sealed class PartialFileCleanupTests : IDisposable
 public sealed class ConcurrentDownloadSettingTests
 {
     [Fact]
+    public void Video_detection_is_on_by_default() => Assert.True(new AppSettings().DetectVideos);
+
+    [Fact]
     public void Defaults_to_the_manager_default() =>
         Assert.Equal(DownloadManager.DefaultMaxConcurrent, new AppSettings().MaxConcurrentDownloads);
 

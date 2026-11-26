@@ -501,6 +501,25 @@ public sealed class DownloadManagerTests : DatabaseTestBase
     }
 
     [Fact]
+    public async Task Expired_link_says_so_and_a_fresh_address_lets_retry_finish()
+    {
+        var (manager, _, namer) = Create();
+        _server.ScriptedStatuses.Enqueue(HttpStatusCode.Forbidden);
+
+        var item = await manager.EnqueueAsync(Request(namer));
+        await WaitFor(manager, item.Id, DownloadState.Failed);
+        Assert.Contains("expired", manager.Find(item.Id)!.Error);
+
+        var fresh = new Uri("https://files.example/file.bin?token=new");
+        Assert.True(manager.ReplaceSource(item.Id, fresh, new Dictionary<string, string> { ["Referer"] = "https://site.example/" }));
+        Assert.Equal(fresh.AbsoluteUri, manager.Find(item.Id)!.SourceUrl);
+
+        manager.Retry(item.Id);
+        await WaitFor(manager, item.Id, DownloadState.Completed);
+        Assert.False(manager.ReplaceSource(item.Id, fresh, null)); // finished downloads keep their address
+    }
+
+    [Fact]
     public async Task Browser_downloads_are_tracked_and_late_reports_ignored()
     {
         var (manager, repo, _) = Create();

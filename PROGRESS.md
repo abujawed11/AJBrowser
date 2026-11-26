@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built (key checks run by the agent in the real app) · Phase 5 in progress: 5a ✅ 5b ✅ (checked in the real app), next 5c**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built (key checks run by the agent in the real app) · Phase 5 🔶 built (5a, 5b checked in the real app; 5c check pending), next Phase 6 (HLS)**
 
 ---
 
@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **486 passing tests**.
+   - Test Explorer: expect **488 passing tests**.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -131,7 +131,7 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
                              confirmation), VideoHint (strict parsing of the page script's message), MediaFileNamer
   Security/RequestContext.cs (5a) allowlisted headers for app downloads; cookies only added at download time
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection (486 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection (488 tests)
 ```
 
 **Packages:**
@@ -150,7 +150,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, launches (installs on first start, reused on the next, off/on choice kept), toolbar shield + switch driven via UI Automation. **You:** ad blocking confirmed working; remaining checks in §6. |
 | 3 Bookmarks, history, settings | 🔶 Built | Agent: build, 298 tests, sharp site icons in lists and tabs, app driven via UI Automation (star, history, bookmarks, settings, suggestions, session restore of 4 tabs, clear history). **You:** the checks in §6. |
 | 4 Download manager | 🔶 Built | **4a** Core engine; **4b** interceptor, toolbar button + flyout, Downloads page, actions; **4c** downloads survive closing their tab (keep-alive verified in a standalone spike, F18), blank download tabs close themselves, exit question, old `.ajpart` cleanup, "Simultaneous video downloads" setting. 399 tests, build 0 warnings. The agent did **not** launch AJBrowser itself (it would write into your real data folder). **You:** the Phase 4 checks in §6. |
-| 5 Video detection | 🔶 **In progress** | **5a done** (Core detection logic, 472 tests). **5b done, checked by the agent in the real app** (a real &lt;video&gt; found with resolution/duration and downloaded byte-identical with Referer + cookie; big native file found by size; HLS page = one entry, no segment flood; list clears on a new page). **Next 5c:** right-click "Download video", Settings switch, Save as…, expired-link message, decide V14 (saved source URLs of video downloads). |
+| 5 Video detection | 🔶 Built | **5a** Core detection logic. **5b** checked by the agent in the real app (real &lt;video&gt; found and downloaded byte-identical with Referer + cookie; size rule; HLS = one entry; clears on a new page); real file names after your report. **5c** right-click "Download video", Settings switch, Save as…, expired-link message + fresh link on Retry, V14 decided. 488 tests. **Pending:** the agent's real-app check of 5c (needs AJBrowser closed), and your quick try. |
 | 6–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
@@ -170,7 +170,13 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: try Phase 5b, then continue with 5c
+## 6. Next task: check Phase 5 (5b + 5c), then start Phase 6
+
+**Phase 5c quick try:**
+4. Right-click a playing video on a page with a plain video file → "Download video with AJBrowser" → it appears in the downloads.
+5. In the Videos picker, the small save icon next to Download → a Save dialog; Cancel → nothing happens.
+6. Settings → Downloads → turn off "Detect videos on pages" → the film button disappears; turn it on and reload → it comes back.
+7. Expired link: hard to provoke on purpose; if a video download fails with "The link has expired…", play the video again in its tab and press Retry → it continues.
 
 **Phase 5b quick try** (the agent already ran it on test pages):
 1. Open a page with a plain video file, for example a site's own `.mp4` (many news or documentation sites, or `https://www.w3schools.com/html/html5_video.asp`) and let it play → a blue film icon with a number appears left of the address-bar indicators. Click it → "Videos on this page" with quality, size and length → **Download** → it appears in the downloads flyout and plays afterwards.
@@ -253,7 +259,7 @@ Report anything odd, and the agent will fix it before Phase 4.
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 5 with checkpoint 5c.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then start Phase 6 (split it into checkpoints like 5a–5c).
 
 ## 7. uBlock Origin Lite test (V5): done
 

@@ -321,6 +321,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OnDownloadsShowAllRequested(object? sender, EventArgs e) => OpenInternalPage(InternalPage.Downloads);
 
+    /// <summary>For Retry/Resume of a video download: the newest address any open tab has seen for that file.</summary>
+    public (Core.Media.DetectedMedia Media, Func<Uri, Task<string?>> Cookies)? FindMediaInTabs(string key)
+    {
+        // The selected tab first (most likely the one where the video was just replayed).
+        foreach (var tab in Tabs.OrderByDescending(t => t == SelectedTab))
+        {
+            if (tab.FindMedia(key) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Retrying a browser download: its address opens in a new tab and the engine downloads it again.</summary>
     private void OnDownloadsOpenUrlRequested(object? sender, Uri uri) => OpenTab(uri, select: true, opener: SelectedTab);
 
@@ -504,6 +519,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OnSettingsChanged(object? sender, AppSettings previous)
     {
+        if (previous.DetectVideos && !_settings.Current.DetectVideos)
+        {
+            foreach (var tab in Tabs)
+            {
+                tab.ClearMedia();
+            }
+        }
+
         OnPropertyChanged(nameof(IsSystemTheme));
         OnPropertyChanged(nameof(IsLightTheme));
         OnPropertyChanged(nameof(IsDarkTheme));

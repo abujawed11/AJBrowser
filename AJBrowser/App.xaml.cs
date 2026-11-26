@@ -51,6 +51,9 @@ public partial class App : Application
                 _services.CreateTab,
                 _services.CreateLogger(nameof(MainWindowViewModel)));
             _services.AdBlock = _mainViewModel.AdBlock;
+            var mainViewModel = _mainViewModel;
+            var mediaDownloads = _services.MediaDownloads;
+            _services.Downloads.RefreshSourceBeforeRetry = item => mediaDownloads.RefreshSourceAsync(item, mainViewModel.FindMediaInTabs);
 
             var window = new MainWindow(_mainViewModel);
             MainWindow = window;
