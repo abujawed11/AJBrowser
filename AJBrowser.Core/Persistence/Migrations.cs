@@ -81,6 +81,11 @@ public static class Migrations
         """
         ALTER TABLE downloads ADD COLUMN source_type TEXT NOT NULL DEFAULT 'File';  -- DownloadSource name
         """,
+
+        // ---- v5 (Phase 6c): an HLS stream's separate sound track, merged into the result with FFmpeg.
+        """
+        ALTER TABLE downloads ADD COLUMN audio_url TEXT NULL;
+        """,
     ];
 
     /// <summary>The schema version this build of AJBrowser expects.</summary>

@@ -58,8 +58,25 @@
                                     <TextBlock Text="Added to downloads" FontSize="{StaticResource CaptionFontSize}"
                                                Foreground="{DynamicResource SuccessBrush}"
                                                Visibility="{Binding WasQueued, Converter={StaticResource PageBoolToVisibility}}" />
+                                    <!-- HLS: choose the quality (best first); the size is an estimate from bitrate × length. -->
+                                    <ComboBox ItemsSource="{Binding Qualities}" SelectedItem="{Binding SelectedQuality}" DisplayMemberPath="Label"
+                                              Margin="0,4,0,0" FontSize="{StaticResource CaptionFontSize}"
+                                              Visibility="{Binding HasQualities, Converter={StaticResource PageBoolToVisibility}}"
+                                              AutomationProperties.Name="Quality" />
                                     <TextBlock Text="{Binding Message}" FontSize="{StaticResource CaptionFontSize}" TextWrapping="Wrap"
                                                Style="{StaticResource ErrorTextStyle}" Margin="0" />
+                                    <TextBlock Text="{Binding Note}" FontSize="{StaticResource CaptionFontSize}" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
                             </DockPanel>
                         </Border>

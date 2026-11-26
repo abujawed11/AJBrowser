@@ -14,7 +14,9 @@ public sealed record HlsPlan(
     HlsMediaPlaylist? Media,
     string OutputExtension,
     bool HasSeparateAudio,
-    string? Problem)
+    string? Problem,
+    Uri? AudioPlaylistUrl = null,
+    string? AudioName = null)
 {
     public bool CanDownload => Support == HlsSupport.Supported && MediaPlaylistUrl is not null && Media is not null;
 
@@ -23,18 +25,31 @@ public sealed record HlsPlan(
 }
 
 /// <summary>
+/// What a stream offers, for the picker (Phase 6c): its qualities best first, its length (from one quality's piece
+/// list; the same for all of them), whether it can be downloaded, and the playlists the master refers to (so the page's
+/// own requests for those don't show up as extra rows).
+/// </summary>
+public sealed record HlsInspection(
+    HlsSupport Support,
+    string? Problem,
+    IReadOnlyList<HlsVariant> Variants,
+    double? DurationSeconds,
+    IReadOnlyList<Uri> ReferencedPlaylists,
+    bool HasSeparateAudio);
+
+/// <summary>
 /// Downloads an unprotected, finished (VOD) HLS stream into one file (plan Phase 6):
 /// <list type="bullet">
 /// <item>Pieces (segments) are fetched <see cref="Parallelism"/> at a time with the page's allowlisted headers, each
 /// retried on network trouble, AES-128 ones decrypted, byte-range slices honoured. Each finished piece is saved in a
-/// temporary folder per job, so pausing or an app restart continues where it stopped.</item>
+/// temporary folder per job and track, so pausing or an app restart continues where it stopped.</item>
 /// <item>The <b>Cookie</b> header (fetched for the playlist's address) is sent only to that same host: pieces often
 /// come from other CDN hosts, which must not receive the site's cookies.</item>
 /// <item>Assembly: fMP4 streams (init section + pieces) are already a valid MP4. TS streams become MP4 through FFmpeg
-/// when it's available (a local file in, a local file out: FFmpeg never touches the network or cookies), otherwise
-/// they're saved as .ts, which common players open.</item>
+/// when it's available (local files in and out: FFmpeg never touches the network or cookies), otherwise .ts.</item>
+/// <item>A separate sound track (<see cref="DownloadRequest.AudioUrl"/>, only queued when FFmpeg is there) is
+/// downloaded the same way and merged with FFmpeg; if FFmpeg is gone by then, the picture is saved on its own.</item>
 /// </list>
-/// Separate audio tracks (EXT-X-MEDIA with their own playlist) aren't merged yet: the stream's main playlist is used.
 /// </summary>
 public sealed class HlsDownloader : IStreamDownloader
 {
@@ -82,14 +97,69 @@ public sealed class HlsDownloader : IStreamDownloader
     // ---------------------------------------------------------------- before queueing
 
     /// <summary>
+    /// Reads a stream's playlist for the picker: the qualities (master playlist) and the length, by fetching the best
+    /// quality's piece list. Never throws for network or format problems: they come back as a problem text.
+    /// </summary>
+    public async Task<HlsInspection> InspectAsync(Uri playlistUrl, IReadOnlyDictionary<string, string>? headers, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var playlist = HlsParser.TryParse(await GetTextAsync(playlistUrl, headers, playlistUrl, cancellationToken).ConfigureAwait(false), playlistUrl);
+            switch (playlist)
+            {
+                case HlsMediaPlaylist media:
+                {
+                    var support = HlsAnalysis.Classify(media);
+                    return new HlsInspection(support, HlsAnalysis.Explain(support), [], media.TotalDurationSeconds, [], false);
+                }
+
+                case HlsMasterPlaylist master:
+                {
+                    var referenced = master.Variants.Select(v => v.Uri).Concat(master.Renditions.Select(r => r.Uri).OfType<Uri>()).Distinct().ToList();
+                    var separateAudio = master.Variants.Any(v => AudioRenditionFor(master, v) is not null);
+                    if (HlsAnalysis.IsProtected(master))
+                    {
+                        return new HlsInspection(HlsSupport.Protected, HlsAnalysis.Explain(HlsSupport.Protected), [], null, referenced, separateAudio);
+                    }
+
+                    var variants = HlsAnalysis.SortBestFirst(master.Variants);
+                    if (variants.Count == 0)
+                    {
+                        return new HlsInspection(HlsSupport.Empty, HlsAnalysis.Explain(HlsSupport.Empty), [], null, referenced, false);
+                    }
+
+                    // One quality's piece list tells the length (and DRM keys or "live", which apply to all of them).
+                    var best = variants[0];
+                    var media = HlsParser.TryParse(await GetTextAsync(best.Uri, headers, playlistUrl, cancellationToken).ConfigureAwait(false), best.Uri) as HlsMediaPlaylist;
+                    var support = media is null ? HlsSupport.Empty : HlsAnalysis.Classify(media);
+                    var problem = media is null ? "The stream's playlist couldn't be read." : HlsAnalysis.Explain(support);
+                    return new HlsInspection(support, problem, variants, media?.TotalDurationSeconds, referenced, separateAudio);
+                }
+
+                default:
+                    return new HlsInspection(HlsSupport.Empty, "The stream's playlist couldn't be read.", [], null, [], false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HlsFatalException or HttpRequestException or TaskCanceledException or IOException)
+        {
+            return new HlsInspection(HlsSupport.Empty, ex is HlsFatalException ? ex.Message : "The stream's playlist couldn't be read.", [], null, [], false);
+        }
+    }
+
+    /// <summary>
     /// Fetches the playlist; for a master playlist picks a quality (<paramref name="variantUri"/>, else the best) and
-    /// fetches its media playlist. Decides whether it can be downloaded and which file extension the result gets.
+    /// fetches its media playlist. Decides whether it can be downloaded, which file extension the result gets, and, when
+    /// FFmpeg is available, which separate sound track to merge in.
     /// </summary>
     public async Task<HlsPlan> PrepareAsync(Uri playlistUrl, IReadOnlyDictionary<string, string>? headers, Uri? variantUri = null, CancellationToken cancellationToken = default)
     {
         var playlist = HlsParser.TryParse(await GetTextAsync(playlistUrl, headers, playlistUrl, cancellationToken).ConfigureAwait(false), playlistUrl);
         HlsVariant? variant = null;
-        var separateAudio = false;
+        HlsRendition? audio = null;
         var mediaUrl = playlistUrl;
 
         if (playlist is HlsMasterPlaylist master)
@@ -106,8 +176,7 @@ public sealed class HlsDownloader : IStreamDownloader
                 return Plan(HlsSupport.Empty);
             }
 
-            separateAudio = variant.AudioGroup is { } group
-                            && master.Renditions.Any(r => r.Type == "AUDIO" && r.GroupId == group && r.Uri is not null);
+            audio = AudioRenditionFor(master, variant);
             mediaUrl = variant.Uri;
             playlist = HlsParser.TryParse(await GetTextAsync(mediaUrl, headers, playlistUrl, cancellationToken).ConfigureAwait(false), mediaUrl);
         }
@@ -118,87 +187,66 @@ public sealed class HlsDownloader : IStreamDownloader
         }
 
         var support = HlsAnalysis.Classify(media);
+        var ffmpeg = _ffmpegPath() is not null;
+        var mergeAudio = audio is not null && ffmpeg;
         var (container, _) = HlsAnalysis.SelectContainer(variant?.Codecs);
-        var extension = media.IsFragmentedMp4 ? ".mp4"
-            : _ffmpegPath() is not null ? container switch { "WebM" => ".webm", "MKV" => ".mkv", _ => ".mp4" }
-            : ".ts";
-        return new HlsPlan(support, mediaUrl, variant, media, extension, separateAudio, HlsAnalysis.Explain(support));
+        var extension = mergeAudio || (!media.IsFragmentedMp4 && ffmpeg)
+            ? container switch { "WebM" => ".webm", "MKV" => ".mkv", _ => ".mp4" }
+            : media.IsFragmentedMp4 ? ".mp4" : ".ts";
+        return new HlsPlan(support, mediaUrl, variant, media, extension, audio is not null, HlsAnalysis.Explain(support),
+            mergeAudio ? audio!.Uri : null, audio?.Name);
 
         static HlsPlan Plan(HlsSupport support) => new(support, null, null, null, ".mp4", false, HlsAnalysis.Explain(support));
+    }
+
+    /// <summary>The sound track a quality uses when it's separate: the group's default, else its first track with a playlist.</summary>
+    private static HlsRendition? AudioRenditionFor(HlsMasterPlaylist master, HlsVariant variant)
+    {
+        if (variant.AudioGroup is not { } group)
+        {
+            return null;
+        }
+
+        var tracks = master.Renditions.Where(r => r.Type == "AUDIO" && r.GroupId == group && r.Uri is not null).ToList();
+        return tracks.FirstOrDefault(r => r.IsDefault) ?? tracks.FirstOrDefault();
     }
 
     // ---------------------------------------------------------------- the download
 
     /// <summary>
-    /// Downloads the stream whose <b>media</b> playlist is <see cref="DownloadRequest.Url"/> into
-    /// <see cref="DownloadRequest.TargetPath"/>. Never throws for network, HTTP or file problems (they come back as Failed).
-    /// Cancellation keeps the finished pieces (pause); <see cref="DeleteTemp"/> removes them (cancel).
+    /// Downloads the stream whose <b>media</b> playlist is <see cref="DownloadRequest.Url"/> (plus the sound track at
+    /// <see cref="DownloadRequest.AudioUrl"/>, if any) into <see cref="DownloadRequest.TargetPath"/>. Never throws for
+    /// network, HTTP or file problems (they come back as Failed). Cancellation keeps the finished pieces (pause);
+    /// <see cref="DeleteTemp"/> removes them (cancel).
     /// </summary>
     public async Task<DownloadResult> DownloadAsync(long jobId, DownloadRequest request, IProgress<DownloadProgress>? progress, CancellationToken cancellationToken)
     {
         var folder = TempFolderFor(jobId);
-        long[] sizes = [];
+        var tracks = new List<Track>();
         try
         {
-            var text = await GetTextAsync(request.Url, request.Headers, request.Url, cancellationToken).ConfigureAwait(false);
-            if (HlsParser.TryParse(text, request.Url) is not HlsMediaPlaylist media)
+            var video = await ReadMediaAsync(request.Url, request, cancellationToken).ConfigureAwait(false);
+            tracks.Add(Track.Open(Path.Combine(folder, "video"), video));
+            if (request.AudioUrl is { } audioUrl)
             {
-                return Failed("The stream's playlist couldn't be read.");
-            }
-
-            if (HlsAnalysis.Explain(HlsAnalysis.Classify(media)) is { } problem)
-            {
-                return Failed(problem);
-            }
-
-            PrepareFolder(folder, media);
-            var total = media.Segments.Count;
-            sizes = new long[total];
-            var done = 0;
-            for (var i = 0; i < total; i++)
-            {
-                if (File.Exists(SegmentPath(folder, i)))
-                {
-                    sizes[i] = new FileInfo(SegmentPath(folder, i)).Length;
-                    done++;
-                }
+                var audio = await ReadMediaAsync(audioUrl, request, cancellationToken).ConfigureAwait(false);
+                tracks.Add(Track.Open(Path.Combine(folder, "audio"), audio));
             }
 
             void Report()
             {
-                var received = sizes.Sum();
-                var finished = Volatile.Read(ref done);
-                long? estimate = finished > 0 ? (long)((double)received / finished * total) : null;
-                progress?.Report(new DownloadProgress(received, estimate));
+                var received = tracks.Sum(t => t.Received);
+                var estimates = tracks.Select(t => t.EstimatedTotal).ToList();
+                progress?.Report(new DownloadProgress(received, estimates.All(e => e is not null) ? estimates.Sum(e => e!.Value) : null));
             }
 
             Report();
-
-            // Keys and init sections are small and shared by many pieces: fetch each once.
-            var keys = new Dictionary<Uri, byte[]>();
-            var keyLock = new SemaphoreSlim(1, 1);
-            await EnsureMapsAsync(folder, media, request, cancellationToken).ConfigureAwait(false);
-
-            var pending = Enumerable.Range(0, total).Where(i => !File.Exists(SegmentPath(folder, i))).ToList();
-            await Parallel.ForEachAsync(pending, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Parallelism), CancellationToken = cancellationToken }, async (index, token) =>
+            foreach (var track in tracks)
             {
-                var segment = media.Segments[index];
-                var data = await FetchWithRetriesAsync(segment.Uri, segment.ByteRange, request, token).ConfigureAwait(false);
-                if (segment.Key is { IsAes128: true } key)
-                {
-                    var keyBytes = await GetKeyAsync(key, request, keys, keyLock, token).ConfigureAwait(false);
-                    data = HlsDecryptor.Decrypt(data, keyBytes, HlsDecryptor.IvFor(segment));
-                }
+                await DownloadTrackAsync(track, request, Report, cancellationToken).ConfigureAwait(false);
+            }
 
-                var final = SegmentPath(folder, index);
-                await File.WriteAllBytesAsync(final + ".part", data, token).ConfigureAwait(false);
-                File.Move(final + ".part", final, overwrite: true);
-                sizes[index] = data.LongLength;
-                Interlocked.Increment(ref done);
-                Report();
-            }).ConfigureAwait(false);
-
-            var finalPath = await AssembleAsync(folder, media, request.TargetPath, cancellationToken).ConfigureAwait(false);
+            var finalPath = await AssembleAsync(tracks, request.TargetPath, cancellationToken).ConfigureAwait(false);
             DeleteTemp(jobId);
             var size = new FileInfo(finalPath).Length;
             progress?.Report(new DownloadProgress(size, size));
@@ -206,7 +254,7 @@ public sealed class HlsDownloader : IStreamDownloader
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return new DownloadResult(DownloadOutcome.Cancelled, sizes.Sum(), null, null); // pieces kept for resuming
+            return new DownloadResult(DownloadOutcome.Cancelled, tracks.Sum(t => t.Received), null, null); // pieces kept for resuming
         }
         catch (HlsFatalException ex)
         {
@@ -226,6 +274,100 @@ public sealed class HlsDownloader : IStreamDownloader
         }
 
         static DownloadResult Failed(string message) => new(DownloadOutcome.Failed, 0, null, null, message);
+    }
+
+    private async Task<HlsMediaPlaylist> ReadMediaAsync(Uri url, DownloadRequest request, CancellationToken cancellationToken)
+    {
+        var text = await GetTextAsync(url, request.Headers, request.Url, cancellationToken).ConfigureAwait(false);
+        if (HlsParser.TryParse(text, url) is not HlsMediaPlaylist media)
+        {
+            throw new HlsFatalException("The stream's playlist couldn't be read.");
+        }
+
+        return HlsAnalysis.Explain(HlsAnalysis.Classify(media)) is { } problem ? throw new HlsFatalException(problem) : media;
+    }
+
+    private async Task DownloadTrackAsync(Track track, DownloadRequest request, Action report, CancellationToken cancellationToken)
+    {
+        // Keys and init sections are small and shared by many pieces: fetch each once.
+        var keys = new Dictionary<Uri, byte[]>();
+        var keyLock = new SemaphoreSlim(1, 1);
+        var maps = DistinctMaps(track.Media);
+        for (var i = 0; i < maps.Count; i++)
+        {
+            if (!File.Exists(MapPath(track.Folder, i)))
+            {
+                var data = await FetchWithRetriesAsync(maps[i].Uri, maps[i].ByteRange, request, cancellationToken).ConfigureAwait(false);
+                await File.WriteAllBytesAsync(MapPath(track.Folder, i), data, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        var pending = Enumerable.Range(0, track.Media.Segments.Count).Where(i => !File.Exists(SegmentPath(track.Folder, i))).ToList();
+        await Parallel.ForEachAsync(pending, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Parallelism), CancellationToken = cancellationToken }, async (index, token) =>
+        {
+            var segment = track.Media.Segments[index];
+            var data = await FetchWithRetriesAsync(segment.Uri, segment.ByteRange, request, token).ConfigureAwait(false);
+            if (segment.Key is { IsAes128: true } key)
+            {
+                var keyBytes = await GetKeyAsync(key, request, keys, keyLock, token).ConfigureAwait(false);
+                data = HlsDecryptor.Decrypt(data, keyBytes, HlsDecryptor.IvFor(segment));
+            }
+
+            var final = SegmentPath(track.Folder, index);
+            await File.WriteAllBytesAsync(final + ".part", data, token).ConfigureAwait(false);
+            File.Move(final + ".part", final, overwrite: true);
+            track.Completed(index, data.LongLength);
+            report();
+        }).ConfigureAwait(false);
+    }
+
+    /// <summary>One playlist's pieces in its own folder, with what's already done.</summary>
+    private sealed class Track
+    {
+        private readonly long[] _sizes;
+        private int _done;
+
+        private Track(string folder, HlsMediaPlaylist media)
+        {
+            Folder = folder;
+            Media = media;
+            _sizes = new long[media.Segments.Count];
+            for (var i = 0; i < _sizes.Length; i++)
+            {
+                if (File.Exists(SegmentPath(folder, i)))
+                {
+                    _sizes[i] = new FileInfo(SegmentPath(folder, i)).Length;
+                    _done++;
+                }
+            }
+        }
+
+        public string Folder { get; }
+        public HlsMediaPlaylist Media { get; }
+        public long Received => _sizes.Sum();
+
+        /// <summary>Average finished piece × number of pieces (an estimate until the end).</summary>
+        public long? EstimatedTotal
+        {
+            get
+            {
+                var done = Volatile.Read(ref _done);
+                return done > 0 ? (long)((double)Received / done * _sizes.Length) : null;
+            }
+        }
+
+        /// <summary>Keeps finished pieces from an earlier run only if the playlist still has the same pieces.</summary>
+        public static Track Open(string folder, HlsMediaPlaylist media)
+        {
+            PrepareFolder(folder, media);
+            return new Track(folder, media);
+        }
+
+        public void Completed(int index, long bytes)
+        {
+            _sizes[index] = bytes;
+            Interlocked.Increment(ref _done);
+        }
     }
 
     // ---------------------------------------------------------------- temp folder
@@ -268,43 +410,71 @@ public sealed class HlsDownloader : IStreamDownloader
         }
     }
 
-    private async Task EnsureMapsAsync(string folder, HlsMediaPlaylist media, DownloadRequest request, CancellationToken cancellationToken)
-    {
-        var maps = DistinctMaps(media);
-        for (var i = 0; i < maps.Count; i++)
-        {
-            var path = MapPath(folder, i);
-            if (!File.Exists(path))
-            {
-                var data = await FetchWithRetriesAsync(maps[i].Uri, maps[i].ByteRange, request, cancellationToken).ConfigureAwait(false);
-                await File.WriteAllBytesAsync(path, data, cancellationToken).ConfigureAwait(false);
-            }
-        }
-    }
-
     private static List<HlsMap> DistinctMaps(HlsMediaPlaylist media) =>
         media.Segments.Select(s => s.Map).OfType<HlsMap>().Distinct().ToList();
 
     // ---------------------------------------------------------------- assembly
 
-    /// <summary>Joins the pieces in order (each init section before the pieces that use it) and, if needed, remuxes.</summary>
-    private async Task<string> AssembleAsync(string folder, HlsMediaPlaylist media, string targetPath, CancellationToken cancellationToken)
+    /// <summary>
+    /// Picture and sound: join each track, merge them with FFmpeg. Picture only (or FFmpeg missing or failing):
+    /// fMP4 is used as it is, TS is remuxed when FFmpeg is there, else kept as .ts.
+    /// </summary>
+    private async Task<string> AssembleAsync(List<Track> tracks, string targetPath, CancellationToken cancellationToken)
     {
-        var wantsRemux = !media.IsFragmentedMp4 && !targetPath.EndsWith(".ts", StringComparison.OrdinalIgnoreCase);
-        var joined = wantsRemux ? Path.Combine(folder, "joined.ts") : FileNamer.PartialPathFor(targetPath);
-        await JoinAsync(folder, media, joined, cancellationToken).ConfigureAwait(false);
+        var video = tracks[0];
+        var container = Path.GetExtension(targetPath).ToLowerInvariant() switch { ".webm" => "WebM", ".mkv" => "MKV", _ => "MP4" };
+        var ffmpeg = _ffmpegPath();
 
-        if (!wantsRemux)
+        if (tracks.Count > 1 && ffmpeg is not null)
         {
-            return MoveIntoPlace(joined, targetPath);
+            var videoFile = Path.Combine(video.Folder, "joined" + (video.Media.IsFragmentedMp4 ? ".mp4" : ".ts"));
+            var audio = tracks[1];
+            var audioFile = Path.Combine(audio.Folder, "joined" + (audio.Media.IsFragmentedMp4 ? ".mp4" : ".ts"));
+            await JoinAsync(video, videoFile, cancellationToken).ConfigureAwait(false);
+            await JoinAsync(audio, audioFile, cancellationToken).ConfigureAwait(false);
+
+            var output = FileNamer.PartialPathFor(targetPath);
+            var result = await FfmpegRunner.RunAsync(ffmpeg, FfmpegRunner.MergeArguments(videoFile, audioFile, output, container), video.Media.TotalDurationSeconds, null, cancellationToken).ConfigureAwait(false);
+            if (result.Succeeded && File.Exists(output))
+            {
+                return MoveIntoPlace(output, targetPath);
+            }
+
+            DeleteQuietly(output);
+            return await AssembleVideoOnlyAsync(video, targetPath, container, ffmpeg, cancellationToken).ConfigureAwait(false);
         }
 
-        var ffmpeg = _ffmpegPath();
+        return await AssembleVideoOnlyAsync(video, targetPath, container, ffmpeg, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string> AssembleVideoOnlyAsync(Track video, string targetPath, string container, string? ffmpeg, CancellationToken cancellationToken)
+    {
+        if (video.Media.IsFragmentedMp4)
+        {
+            // fMP4 is already MP4: join straight into the target (renamed to .mp4 if the target was meant for another container).
+            var mp4Target = targetPath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? targetPath : Path.ChangeExtension(targetPath, ".mp4");
+            var partial = FileNamer.PartialPathFor(mp4Target);
+            await JoinAsync(video, partial, cancellationToken).ConfigureAwait(false);
+            return MoveIntoPlace(partial, mp4Target);
+        }
+
+        if (targetPath.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
+        {
+            var partial = FileNamer.PartialPathFor(targetPath);
+            await JoinAsync(video, partial, cancellationToken).ConfigureAwait(false);
+            return MoveIntoPlace(partial, targetPath);
+        }
+
+        var joined = Path.Combine(video.Folder, "joined.ts");
+        if (!File.Exists(joined))
+        {
+            await JoinAsync(video, joined, cancellationToken).ConfigureAwait(false);
+        }
+
         if (ffmpeg is not null)
         {
             var output = FileNamer.PartialPathFor(targetPath);
-            var container = Path.GetExtension(targetPath).ToLowerInvariant() switch { ".webm" => "WebM", ".mkv" => "MKV", _ => "MP4" };
-            var result = await FfmpegRunner.RunAsync(ffmpeg, FfmpegRunner.RemuxArguments(joined, output, container), media.TotalDurationSeconds, null, cancellationToken).ConfigureAwait(false);
+            var result = await FfmpegRunner.RunAsync(ffmpeg, FfmpegRunner.RemuxArguments(joined, output, container), video.Media.TotalDurationSeconds, null, cancellationToken).ConfigureAwait(false);
             if (result.Succeeded && File.Exists(output))
             {
                 return MoveIntoPlace(output, targetPath);
@@ -319,21 +489,22 @@ public sealed class HlsDownloader : IStreamDownloader
         return tsPath;
     }
 
-    private static async Task JoinAsync(string folder, HlsMediaPlaylist media, string output, CancellationToken cancellationToken)
+    /// <summary>Joins a track's pieces in order, each init section before the pieces that use it.</summary>
+    private static async Task JoinAsync(Track track, string output, CancellationToken cancellationToken)
     {
-        var maps = DistinctMaps(media);
+        var maps = DistinctMaps(track.Media);
         await using var stream = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.None, HttpFileDownloader.BufferSize, useAsync: true);
         HlsMap? current = null;
-        for (var i = 0; i < media.Segments.Count; i++)
+        for (var i = 0; i < track.Media.Segments.Count; i++)
         {
-            var segment = media.Segments[i];
+            var segment = track.Media.Segments[i];
             if (segment.Map is { } map && map != current)
             {
-                await AppendAsync(stream, MapPath(folder, maps.IndexOf(map)), cancellationToken).ConfigureAwait(false);
+                await AppendAsync(stream, MapPath(track.Folder, maps.IndexOf(map)), cancellationToken).ConfigureAwait(false);
                 current = map;
             }
 
-            await AppendAsync(stream, SegmentPath(folder, i), cancellationToken).ConfigureAwait(false);
+            await AppendAsync(stream, SegmentPath(track.Folder, i), cancellationToken).ConfigureAwait(false);
         }
     }
 

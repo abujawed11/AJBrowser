@@ -50,6 +50,9 @@ public sealed record DownloadItem
 
     /// <summary>App downloads: a single file, or an HLS stream (<see cref="SourceUrl"/> is then its media playlist).</summary>
     public DownloadSource Source { get; init; }
+
+    /// <summary>HLS: the separate sound track's media playlist, merged into the result (Phase 6c). Never logged.</summary>
+    public string? AudioSourceUrl { get; init; }
     public DownloadState State { get; init; }
 
     /// <summary>The real address (needed for retry). Never log it: use <see cref="DisplayUrl"/>.</summary>

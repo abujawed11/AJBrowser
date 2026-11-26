@@ -71,13 +71,7 @@ public static class FfmpegRunner
     /// </summary>
     public static IReadOnlyList<string> RemuxArguments(string input, string output, string container)
     {
-        var format = container.ToUpperInvariant() switch
-        {
-            "MP4" => "mp4",
-            "WEBM" => "webm",
-            _ => "matroska",
-        };
-
+        var format = FormatFor(container);
         var args = new List<string>
         {
             "-hide_banner", "-nostdin", "-y",
@@ -94,6 +88,37 @@ public static class FfmpegRunner
         args.AddRange(["-f", format, "-progress", "pipe:1", "-nostats", output]);
         return args;
     }
+
+    /// <summary>
+    /// Arguments to put a picture file and a separate sound file into one container, copying both (no re-encoding):
+    /// the first file's video and the second file's audio.
+    /// </summary>
+    public static IReadOnlyList<string> MergeArguments(string video, string audio, string output, string container)
+    {
+        var format = FormatFor(container);
+        var args = new List<string>
+        {
+            "-hide_banner", "-nostdin", "-y",
+            "-fflags", "+genpts", "-i", video,
+            "-fflags", "+genpts", "-i", audio,
+            "-map", "0:v?", "-map", "1:a?",
+            "-c", "copy",
+        };
+        if (format == "mp4")
+        {
+            args.AddRange(["-movflags", "+faststart"]);
+        }
+
+        args.AddRange(["-f", format, "-progress", "pipe:1", "-nostats", output]);
+        return args;
+    }
+
+    private static string FormatFor(string container) => container.ToUpperInvariant() switch
+    {
+        "MP4" => "mp4",
+        "WEBM" => "webm",
+        _ => "matroska",
+    };
 
     public static async Task<FfmpegResult> RunAsync(string ffmpegPath, IReadOnlyList<string> arguments, double? durationSeconds, IProgress<double>? progress, CancellationToken cancellationToken)
     {

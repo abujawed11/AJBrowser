@@ -377,12 +377,13 @@
                     <Popup x:Name="VideosPopup"
                            PlacementTarget="{Binding ElementName=VideosButton}"
                            Placement="Bottom"
-                           HorizontalOffset="-330" VerticalOffset="-4"
+                           HorizontalOffset="-430" VerticalOffset="-4"
                            StaysOpen="False"
                            AllowsTransparency="True"
                            PopupAnimation="Fade"
                            Closed="VideosPopup_Closed">
-                        <Border Margin="12" Width="380"
+                        <!-- Wide enough for quality labels like "1080p · 6.2 Mbps · H.264/AAC · ≈ 471 MB est.". -->
+                        <Border Margin="12" Width="480"
                                 Background="{DynamicResource FlyoutBackgroundBrush}"
                                 BorderBrush="{DynamicResource ChromeBorderBrush}" BorderThickness="1"
                                 CornerRadius="8" Padding="10,12"

@@ -138,6 +138,7 @@ public sealed class TabMediaStore
     private static readonly HashSet<string> NativeContexts = new(StringComparer.OrdinalIgnoreCase) { "Media", "Document" };
 
     private readonly Dictionary<string, DetectedMedia> _byKey = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _referenced = new(StringComparer.Ordinal);
     private readonly Func<DateTime> _utcNow;
     private int _nextId = 1;
     private bool _afterSpaNavigation;
@@ -165,6 +166,7 @@ public sealed class TabMediaStore
             Version++;
         }
 
+        _referenced.Clear();
         _afterSpaNavigation = false;
     }
 
@@ -264,6 +266,27 @@ public sealed class TabMediaStore
 
     public DetectedMedia? Find(int id) => _byKey.Values.FirstOrDefault(m => m.Id == id);
 
+    /// <summary>
+    /// A master playlist was read: its quality and sound-track playlists are part of that one video, so they're hidden
+    /// (now and when they show up later). Returns true if the visible list changed.
+    /// </summary>
+    public bool MarkReferenced(IEnumerable<Uri> playlists)
+    {
+        var before = VisibleCount;
+        foreach (var uri in playlists)
+        {
+            _referenced.Add(MediaClassifier.KeyOf(uri));
+        }
+
+        if (VisibleCount != before)
+        {
+            Version++;
+            return true;
+        }
+
+        return false;
+    }
+
     private bool Bump(DetectedMedia before, DetectedMedia after, int visibleBefore)
     {
         var changed = VisibleCount != visibleBefore
@@ -301,7 +324,8 @@ public sealed class TabMediaStore
         return native && bigEnough && !(streamOnPage && item.ResourceContext is null);
     }
 
-    private static bool IsVisible(DetectedMedia item) => item.Kind is MediaKind.Hls or MediaKind.Dash || item.IsConfirmed;
+    private bool IsVisible(DetectedMedia item) =>
+        !_referenced.Contains(item.Key) && (item.Kind is MediaKind.Hls or MediaKind.Dash || item.IsConfirmed);
 
     private static long? Max(long? a, long? b) => a is null ? b : b is null ? a : Math.Max(a.Value, b.Value);
 }

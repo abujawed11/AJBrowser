@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using AJBrowser.Core.Downloads;
 using AJBrowser.Core.Media;
@@ -30,8 +31,55 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
 
     public bool IsStream => Media.Kind is MediaKind.Hls or MediaKind.Dash;
 
-    /// <summary>Files and HLS streams (Phase 6); DASH comes in Phase 7.</summary>
-    public bool CanDownload => Media.Kind is MediaKind.Direct or MediaKind.Hls && !IsStarting;
+    /// <summary>Files and HLS streams (Phase 6) that aren't protected or live; DASH comes in Phase 7.</summary>
+    public bool CanDownload => Media.Kind is MediaKind.Direct or MediaKind.Hls && !IsStarting && !IsBlocked;
+
+    /// <summary>The stream's playlist said it can't be downloaded (DRM, live): the reason is in <see cref="Message"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDownload))]
+    public partial bool IsBlocked { get; set; }
+
+    /// <summary>HLS: the qualities to choose from, best first (empty until the playlist was read, or for a single quality).</summary>
+    public ObservableCollection<Services.QualityOption> Qualities { get; } = [];
+
+    [ObservableProperty]
+    public partial Services.QualityOption? SelectedQuality { get; set; }
+
+    /// <summary>More than one quality to choose from: the picker shows the list.</summary>
+    public bool HasQualities => Qualities.Count > 1;
+
+    /// <summary>The stream's playlist is being read.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Details))]
+    public partial bool IsInspecting { get; set; }
+
+    /// <summary>Length of a stream, once read.</summary>
+    private double? _streamDuration;
+
+    /// <summary>Information about the result (for example "sound is a separate track…"), not an error.</summary>
+    [ObservableProperty]
+    public partial string Note { get; set; } = string.Empty;
+
+    /// <summary>The stream was read once (so it isn't read again when the list refreshes).</summary>
+    public bool WasInspected { get; private set; }
+
+    public void ApplyStreamInfo(Services.StreamInfo info)
+    {
+        WasInspected = true;
+        _streamDuration = info.DurationSeconds;
+        Qualities.Clear();
+        foreach (var quality in info.Qualities)
+        {
+            Qualities.Add(quality);
+        }
+
+        SelectedQuality = Qualities.FirstOrDefault();
+        IsBlocked = !info.CanDownload;
+        Message = info.Problem ?? string.Empty;
+        Note = info.Note ?? string.Empty;
+        OnPropertyChanged(nameof(HasQualities));
+        OnPropertyChanged(nameof(Details));
+    }
 
     /// <summary>DASH: listed, not downloadable yet.</summary>
     public bool IsComingSoon => Media.Kind == MediaKind.Dash;
@@ -62,7 +110,9 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
         {
             if (Media.Kind == MediaKind.Hls)
             {
-                return $"Stream (HLS) · best quality · {Media.Host}";
+                return IsInspecting ? $"Stream (HLS) · reading qualities… · {Media.Host}"
+                    : _streamDuration is { } length ? $"Stream (HLS) · {FormatDuration(length)} · {Media.Host}"
+                    : $"Stream (HLS) · {Media.Host}";
             }
 
             if (IsComingSoon)

@@ -216,7 +216,7 @@ public sealed class HlsDownloaderTests : IDisposable
         var result = await task;
         Assert.Equal(DownloadOutcome.Cancelled, result.Outcome);
         Assert.True(result.ReceivedBytes > 0);
-        Assert.True(Directory.GetFiles(downloader.TempFolderFor(7), "seg-*.bin").Length >= 2);
+        Assert.True(Directory.GetFiles(downloader.TempFolderFor(7), "seg-*.bin", SearchOption.AllDirectories).Length >= 2);
 
         downloader.DeleteTemp(7);
         Assert.False(Directory.Exists(downloader.TempFolderFor(7)));
@@ -305,6 +305,81 @@ public sealed class HlsDownloaderTests : IDisposable
         Assert.False(drm.CanDownload);
     }
 
+    private void AddMasterWithSeparateAudio()
+    {
+        _server.Add(Base + "m.m3u8", """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Deutsch",LANGUAGE="de",URI="de.m3u8"
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",LANGUAGE="en",DEFAULT=YES,URI="en.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360,CODECS="avc1.4d401e,mp4a.40.2",AUDIO="a"
+            v360.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2",AUDIO="a"
+            v720.m3u8
+            """);
+        foreach (var name in new[] { "v360", "v720", "en", "de" })
+        {
+            _server.Add($"{Base}{name}.m3u8", $"#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\n{name}-0.ts\n#EXTINF:6,\n{name}-1.ts\n#EXT-X-ENDLIST\n");
+            _server.Files[$"{Base}{name}-0.ts"] = Encoding.UTF8.GetBytes(name + "-zero;");
+            _server.Files[$"{Base}{name}-1.ts"] = Encoding.UTF8.GetBytes(name + "-one;");
+        }
+    }
+
+    [Fact]
+    public async Task Inspect_lists_qualities_length_and_referenced_playlists()
+    {
+        AddMasterWithSeparateAudio();
+        var inspection = await Create().InspectAsync(new Uri(Base + "m.m3u8"), null);
+
+        Assert.Equal(HlsSupport.Supported, inspection.Support);
+        Assert.Equal([720, 360], inspection.Variants.Select(v => v.Height!.Value));
+        Assert.Equal(10, inspection.DurationSeconds);
+        Assert.True(inspection.HasSeparateAudio);
+        Assert.Equal(
+            new[] { "v360.m3u8", "v720.m3u8", "de.m3u8", "en.m3u8" }.Select(n => Base + n).Order(),
+            inspection.ReferencedPlaylists.Select(u => u.AbsoluteUri).Order());
+    }
+
+    [Fact]
+    public async Task Inspect_reports_drm_found_in_the_pieces_and_unreadable_playlists()
+    {
+        _server.Add(Base + "dm.m3u8", "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nd.m3u8\n");
+        _server.Add(Base + "d.m3u8", "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://k\",KEYFORMAT=\"com.apple.streamingkeydelivery\"\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n");
+        Assert.Equal(HlsSupport.Protected, (await Create().InspectAsync(new Uri(Base + "dm.m3u8"), null)).Support);
+
+        _server.FailNext(Base + "gone.m3u8", HttpStatusCode.Forbidden);
+        var gone = await Create().InspectAsync(new Uri(Base + "gone.m3u8"), null);
+        Assert.Contains("expired", gone.Problem);
+    }
+
+    [Fact]
+    public async Task Prepare_merges_the_default_sound_track_only_with_ffmpeg()
+    {
+        AddMasterWithSeparateAudio();
+        var withFfmpeg = await Create(ffmpeg: @"C:	oolsfmpeg.exe").PrepareAsync(new Uri(Base + "m.m3u8"), null, new Uri(Base + "v360.m3u8"));
+        Assert.Equal(Base + "en.m3u8", withFfmpeg.AudioPlaylistUrl!.AbsoluteUri); // DEFAULT=YES wins
+        Assert.Equal("English", withFfmpeg.AudioName);
+        Assert.Equal(".mp4", withFfmpeg.OutputExtension);
+
+        var without = await Create(ffmpeg: null).PrepareAsync(new Uri(Base + "m.m3u8"), null);
+        Assert.Null(without.AudioPlaylistUrl);
+        Assert.True(without.HasSeparateAudio);
+        Assert.Equal(".ts", without.OutputExtension);
+    }
+
+    [Fact]
+    public async Task With_a_sound_track_but_no_ffmpeg_the_picture_is_saved_on_its_own()
+    {
+        AddMasterWithSeparateAudio();
+        var request = new DownloadRequest(new Uri(Base + "v720.m3u8"), Target("both.mp4"), null, DownloadSource.Hls, new Uri(Base + "en.m3u8"));
+
+        var result = await Create(ffmpeg: null).DownloadAsync(11, request, null, CancellationToken.None);
+
+        Assert.Equal(DownloadOutcome.Completed, result.Outcome);
+        Assert.Equal(Target("both.ts"), result.FinalPath);
+        Assert.Equal("v720-zero;v720-one;", File.ReadAllText(Target("both.ts")));
+        Assert.Equal(1, _server.CountFor(Base + "en-0.ts")); // the sound pieces were fetched too (ready if FFmpeg appears)
+    }
+
     private sealed class SyncProgress(Action<DownloadProgress> report) : IProgress<DownloadProgress>
     {
         public void Report(DownloadProgress value)
@@ -345,6 +420,9 @@ public sealed class HlsInDownloadManagerTests : DatabaseTestBase
         await manager.ShutdownAsync(TimeSpan.FromSeconds(2));
         var saved = Assert.Single(await repo.GetRecentAsync(10));
         Assert.Equal(DownloadSource.Hls, saved.Source);
+
+        var withAudio = await repo.AddAsync(saved with { Id = 0, AudioSourceUrl = "https://cdn.example/en.m3u8" });
+        Assert.Equal("https://cdn.example/en.m3u8", (await repo.GetRecentAsync(10)).Single(d => d.Id == withAudio.Id).AudioSourceUrl);
     }
 }
 
@@ -379,6 +457,17 @@ public sealed class FfmpegTests : IDisposable
             "-c", "copy", "-movflags", "+faststart", "-f", "mp4", "-progress", "pipe:1", "-nostats", @"C:\o\v.mp4.ajpart"], args);
         Assert.DoesNotContain(args, a => a.Contains("http", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("matroska", FfmpegRunner.RemuxArguments("a", "b", "MKV"));
+    }
+
+    [Fact]
+    public void Merge_arguments_take_video_from_the_first_file_and_audio_from_the_second()
+    {
+        var args = FfmpegRunner.MergeArguments("v.ts", "a.ts", "out.ajpart", "MP4");
+        var text = string.Join(' ', args);
+        Assert.Contains("-i v.ts", text);
+        Assert.Contains("-i a.ts", text);
+        Assert.Contains("-map 0:v? -map 1:a? -c copy", text);
+        Assert.EndsWith("-f mp4 -progress pipe:1 -nostats out.ajpart", text);
     }
 
     [Fact]

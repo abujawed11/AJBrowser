@@ -179,6 +179,25 @@ public sealed class TabMediaStoreTests
     }
 
     [Fact]
+    public void Playlists_a_master_refers_to_are_hidden_now_and_later()
+    {
+        var store = new TabMediaStore();
+        store.Add(Obs.Of("https://cdn.example/s/master.m3u8", "application/vnd.apple.mpegurl", context: "Fetch"));
+        store.Add(Obs.Of("https://cdn.example/s/v720.m3u8?t=1", "application/vnd.apple.mpegurl", context: "Fetch"));
+        Assert.Equal(2, store.VisibleCount);
+
+        Assert.True(store.MarkReferenced([new Uri("https://cdn.example/s/v720.m3u8"), new Uri("https://cdn.example/s/en.m3u8")]));
+        Assert.Equal("https://cdn.example/s/master.m3u8", Assert.Single(store.Visible).Url.AbsoluteUri);
+
+        store.Add(Obs.Of("https://cdn.example/s/en.m3u8", "application/vnd.apple.mpegurl", context: "Fetch")); // arrives later
+        Assert.Single(store.Visible);
+
+        store.Reset();
+        store.Add(Obs.Of("https://cdn.example/s/v720.m3u8", "application/vnd.apple.mpegurl", context: "Fetch"));
+        Assert.Single(store.Visible); // a new page starts fresh
+    }
+
+    [Fact]
     public void A_page_cant_flood_the_store()
     {
         var store = new TabMediaStore();

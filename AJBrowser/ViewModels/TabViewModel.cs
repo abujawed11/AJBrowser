@@ -776,7 +776,12 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
             }
             else
             {
-                Media.Add(new DetectedMediaViewModel(item, DownloadMediaAsync, media => Core.Media.MediaFileNamer.Suggest(media, Title)));
+                var row = new DetectedMediaViewModel(item, DownloadMediaAsync, media => Core.Media.MediaFileNamer.Suggest(media, Title));
+                Media.Add(row);
+                if (item.Kind == Core.Media.MediaKind.Hls)
+                {
+                    _ = InspectStreamAsync(row);
+                }
             }
         }
 
@@ -794,13 +799,42 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         row.IsStarting = true;
         try
         {
-            var outcome = await _services.MediaDownloads.StartAsync(row.Media, Title, PageUri, _browser.GetCookieHeaderAsync, saveAs);
+            var outcome = await _services.MediaDownloads.StartAsync(row.Media, Title, PageUri, _browser.GetCookieHeaderAsync, saveAs, row.SelectedQuality?.VariantUri);
             row.WasQueued = outcome.Item is not null || row.WasQueued;
-            row.Message = outcome.Message ?? string.Empty;
+            if (outcome.Item is null)
+            {
+                row.Message = outcome.Message ?? string.Empty;
+            }
+            else
+            {
+                row.Note = outcome.Message ?? string.Empty;
+            }
         }
         finally
         {
             row.IsStarting = false;
+        }
+    }
+
+    /// <summary>
+    /// Reads a new stream row's playlist: its qualities and length, or why it can't be downloaded. A master playlist also
+    /// tells which other playlists belong to it; their rows are hidden (one row per video).
+    /// </summary>
+    private async Task InspectStreamAsync(DetectedMediaViewModel row)
+    {
+        row.IsInspecting = true;
+        try
+        {
+            var info = await _services.MediaDownloads.InspectAsync(row.Media, PageUri, _browser.GetCookieHeaderAsync);
+            row.ApplyStreamInfo(info);
+            if (info.ReferencedPlaylists.Count > 0 && _browser.Media.MarkReferenced(info.ReferencedPlaylists))
+            {
+                OnBrowserMediaChanged(this, EventArgs.Empty);
+            }
+        }
+        finally
+        {
+            row.IsInspecting = false;
         }
     }
 

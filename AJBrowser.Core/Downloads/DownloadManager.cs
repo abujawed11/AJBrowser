@@ -113,6 +113,7 @@ public sealed class DownloadManager
         {
             Kind = DownloadKind.App,
             Source = request.Source,
+            AudioSourceUrl = request.AudioUrl?.AbsoluteUri,
             State = DownloadState.Queued,
             SourceUrl = request.Url.AbsoluteUri,
             PageUrl = pageUrl,
@@ -455,7 +456,8 @@ public sealed class DownloadManager
         DownloadResult result;
         try
         {
-            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source);
+            var audio = Uri.TryCreate(start.AudioSourceUrl, UriKind.Absolute, out var audioUri) ? audioUri : null;
+            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source, audio);
             result = start.Source switch
             {
                 DownloadSource.File => await _downloader.DownloadAsync(request, start.Resume, progress, token).ConfigureAwait(false),

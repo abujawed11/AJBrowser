@@ -446,6 +446,14 @@ public sealed class DownloadManagerTests : DatabaseTestBase
 
         var item = await manager.EnqueueAsync(Request(namer));
         await WaitFor(manager, item.Id, DownloadState.Downloading);
+
+        // Pause only once the stalling first request really reached the server; pausing earlier (possible when the
+        // machine is busy) would leave the stall armed for the resumed request and the test would time out.
+        for (var i = 0; i < 200 && _server.Requests.Count == 0; i++)
+        {
+            await Task.Delay(25);
+        }
+
         manager.Pause(item.Id);
         await WaitFor(manager, item.Id, DownloadState.Paused);
 

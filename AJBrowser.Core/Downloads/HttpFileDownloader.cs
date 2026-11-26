@@ -17,7 +17,8 @@ public enum DownloadOutcome
 }
 
 /// <summary>What to download and where. <see cref="Headers"/> are extra request headers (for example Referer, cookies in Phase 5).</summary>
-public sealed record DownloadRequest(Uri Url, string TargetPath, IReadOnlyDictionary<string, string>? Headers = null, DownloadSource Source = DownloadSource.File);
+/// <remarks><see cref="AudioUrl"/>: an HLS stream's separate sound track (its media playlist), merged with FFmpeg.</remarks>
+public sealed record DownloadRequest(Uri Url, string TargetPath, IReadOnlyDictionary<string, string>? Headers = null, DownloadSource Source = DownloadSource.File, Uri? AudioUrl = null);
 
 public sealed record DownloadProgress(long ReceivedBytes, long? TotalBytes);
 

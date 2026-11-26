@@ -8,6 +8,12 @@ using AJBrowser.Core.Settings;
 
 namespace AJBrowser.Services;
 
+/// <summary>One choice in a stream's quality list: "720p · 3 Mbps · H.264/AAC · ≈ 225 MB est.".</summary>
+public sealed record QualityOption(string Label, Uri? VariantUri);
+
+/// <summary>What the picker shows for a stream once its playlist was read.</summary>
+public sealed record StreamInfo(bool CanDownload, string? Problem, IReadOnlyList<QualityOption> Qualities, double? DurationSeconds, string? Note, IReadOnlyList<Uri> ReferencedPlaylists);
+
 /// <summary>What happened when a video download was asked for: the queued item, or why not (shown in the picker).</summary>
 public sealed record MediaDownloadOutcome(DownloadItem? Item, string? Message)
 {
@@ -42,11 +48,12 @@ public sealed class MediaDownloadService
 
     /// <param name="cookieHeader">Asks the tab's profile for the cookies it would send to a URL (null when there are none).</param>
     /// <param name="saveAs">Ask where to save ("Save as…"); also asked when Settings → "Ask where to save" is on.</param>
-    public async Task<MediaDownloadOutcome> StartAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs = false)
+    /// <param name="variantUri">HLS: the chosen quality (null = the best).</param>
+    public async Task<MediaDownloadOutcome> StartAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs = false, Uri? variantUri = null)
     {
         if (media.Kind == MediaKind.Hls)
         {
-            return await StartHlsAsync(media, pageTitle, pageUrl, cookieHeader, saveAs);
+            return await StartHlsAsync(media, pageTitle, pageUrl, cookieHeader, saveAs, variantUri);
         }
 
         if (media.Kind != MediaKind.Direct)
@@ -95,13 +102,13 @@ public sealed class MediaDownloadService
     /// clear message, pick the best quality (6c lets you choose), name the file after the result's real format
     /// (.mp4, or .ts without FFmpeg) and queue the job; the download manager runs it with <see cref="HlsDownloader"/>.
     /// </summary>
-    private async Task<MediaDownloadOutcome> StartHlsAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs)
+    private async Task<MediaDownloadOutcome> StartHlsAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs, Uri? variantUri)
     {
         var context = media.Request ?? RequestContext.FromObservedRequest([], pageUrl);
         HlsPlan plan;
         try
         {
-            plan = await _hls.PrepareAsync(media.Url, context.ToHeaders(await cookieHeader(media.Url)));
+            plan = await _hls.PrepareAsync(media.Url, context.ToHeaders(await cookieHeader(media.Url)), variantUri);
         }
         catch (Exception ex)
         {
@@ -127,9 +134,12 @@ public sealed class MediaDownloadService
         {
             // Cookies for the media playlist's own host; the downloader sends them only to that host.
             var cookies = await cookieHeader(plan.MediaPlaylistUrl!);
-            var item = await _manager.EnqueueAsync(new DownloadRequest(plan.MediaPlaylistUrl!, path, context.ToHeaders(cookies), DownloadSource.Hls), pageUrl?.AbsoluteUri);
-            _log.Info($"Stream download queued: {Redactor.MediaUrl(plan.MediaPlaylistUrl)} ({plan.Media!.Segments.Count} pieces) → {Path.GetFileName(path)}");
-            var note = plan.HasSeparateAudio ? "Note: this stream's sound is a separate track; this version saves the picture track only." : null;
+            var item = await _manager.EnqueueAsync(
+                new DownloadRequest(plan.MediaPlaylistUrl!, path, context.ToHeaders(cookies), DownloadSource.Hls, plan.AudioPlaylistUrl),
+                pageUrl?.AbsoluteUri);
+            _log.Info($"Stream download queued: {Redactor.MediaUrl(plan.MediaPlaylistUrl)} ({plan.Media!.Segments.Count} pieces"
+                      + (plan.AudioPlaylistUrl is null ? string.Empty : $", sound track \"{plan.AudioName}\"") + $") → {Path.GetFileName(path)}");
+            var note = plan.HasSeparateAudio && plan.AudioPlaylistUrl is null ? NoSoundNote : null;
             return new MediaDownloadOutcome(item, note);
         }
         catch (Exception ex)
@@ -137,6 +147,32 @@ public sealed class MediaDownloadService
             _namer.Release(path);
             _log.Error("Could not start a stream download", ex);
             return new MediaDownloadOutcome(null, "Couldn't start the download (details in the log).");
+        }
+    }
+
+    private const string NoSoundNote = "The sound is a separate track: choose FFmpeg in Settings → Downloads to include it (without it, picture only).";
+
+    /// <summary>
+    /// Reads a stream for the picker: qualities with labels ("720p · 3 Mbps · H.264/AAC · ≈ 225 MB est."), whether it can
+    /// be downloaded, and the playlists the master refers to. Uses the page's headers and cookies; never throws.
+    /// </summary>
+    public async Task<StreamInfo> InspectAsync(DetectedMedia media, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader)
+    {
+        try
+        {
+            var context = media.Request ?? RequestContext.FromObservedRequest([], pageUrl);
+            var inspection = await _hls.InspectAsync(media.Url, context.ToHeaders(await cookieHeader(media.Url)));
+            var qualities = inspection.Variants
+                .Select(v => new QualityOption(HlsAnalysis.VariantLabel(v, inspection.DurationSeconds), v.Uri))
+                .ToList();
+            var canDownload = inspection.Support == HlsSupport.Supported;
+            var note = canDownload && inspection.HasSeparateAudio && Core.Media.Ffmpeg.FfmpegLocator.Find(_settings.Current.FfmpegPath) is null ? NoSoundNote : null;
+            return new StreamInfo(canDownload, inspection.Problem, qualities, inspection.DurationSeconds, note, inspection.ReferencedPlaylists);
+        }
+        catch (Exception ex)
+        {
+            _log.Debug($"Reading a stream for the picker failed: {ex.GetType().Name}");
+            return new StreamInfo(true, null, [], null, null, []); // let Download try (it reports problems itself)
         }
     }
 
