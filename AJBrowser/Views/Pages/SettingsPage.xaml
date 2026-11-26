@@ -154,7 +154,7 @@
                                   AutomationProperties.Name="Simultaneous video downloads" />
                         <StackPanel>
                             <TextBlock Text="Simultaneous video downloads" FontWeight="SemiBold" />
-                            <TextBlock Text="Videos AJBrowser downloads itself (coming in a later version) beyond this number wait their turn. Normal downloads aren't limited."
+                            <TextBlock Text="Videos and streams downloaded from the film button beyond this number wait their turn. Normal downloads aren't limited."
                                        Style="{StaticResource SecondaryTextStyle}" />
                         </StackPanel>
                     </DockPanel>
