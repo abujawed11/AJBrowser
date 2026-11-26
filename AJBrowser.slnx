@@ -1,3 +1,5 @@
 <Solution>
   <Project Path="AJBrowser/AJBrowser.csproj" />
+  <Project Path="AJBrowser.Core/AJBrowser.Core.csproj" />
+  <Project Path="AJBrowser.Core.Tests/AJBrowser.Core.Tests.csproj" />
 </Solution>

@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.0 · **Created:** 2026-11-26 · **Current phase:** Phase 0 (not started)
+**Plan version:** 1.1 · **Created:** 2026-11-26 · **Current phase:** Phase 0 implemented (awaiting your manual check) → next: Phase 0.5
 
 ---
 
@@ -358,17 +358,19 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 **Depends on:** none.
 
 **Checklist**
-- [ ] Create `AJBrowser.Core` (net10.0 class library) and `AJBrowser.Core.Tests` (xUnit). Add both to `AJBrowser.slnx`, and reference Core from the app and the tests.
-- [ ] Add `CommunityToolkit.Mvvm` to the app.
-- [ ] Add a `Directory.Build.props` (shared `LangVersion`, `Nullable`, `TreatWarningsAsErrors` for Core only, optional).
-- [ ] Optional: add `global.json` (SDK pin / roll-forward policy).
-- [ ] Replace `StartupUri` with `App.OnStartup` that builds `AppServices` and shows `MainWindow`.
-- [ ] Add a global exception handler (`DispatcherUnhandledException`, `TaskScheduler.UnobservedTaskException`, `AppDomain.UnhandledException`) that logs (redacted) and shows a friendly dialog.
-- [ ] `AppPaths` (Core) creates the folders from §5.6.
-- [ ] `ILogSink` + `FileLogSink` + `Redactor` (Core), with tests for redaction.
-- [ ] Theme decision: try `Application.ThemeMode` (suppress WPF0001 locally). Create `Themes/` with semantic brush keys (`AppBackgroundBrush`, `ToolbarBrush`, `TabActiveBrush`, …).
-- [ ] Set the window title "AJBrowser", a sensible default size (1280×800), min size, and app icon placeholder.
-- [ ] Add a `README.md` with build/run instructions.
+- [x] Create `AJBrowser.Core` (net10.0 class library) and `AJBrowser.Core.Tests` (xUnit). Add both to `AJBrowser.slnx`, and reference Core from the app and the tests.
+- [x] Add `CommunityToolkit.Mvvm` to the app (8.4.2).
+- [x] Add a `Directory.Build.props` (shared `Nullable`, `ImplicitUsings`, product/version). `TreatWarningsAsErrors` is set in the Core csproj only.
+- [x] ~~Optional: add `global.json`~~. **Skipped:** only the .NET 11 SDK is installed, and it builds `net10.0` fine; pinning a .NET 10 SDK would break the build on this machine. Revisit for CI.
+- [x] Replace `StartupUri` with `App.OnStartup` that builds `AppServices` and shows `MainWindow` (moved to `Views/MainWindow.xaml`).
+- [x] Add a global exception handler (`DispatcherUnhandledException`, `TaskScheduler.UnobservedTaskException`, `AppDomain.UnhandledException`) that logs (redacted) and shows a friendly dialog.
+- [x] `AppPaths` (Core) creates the folders from §5.6.
+- [x] `ILogSink` + `AppLogger` (always redacts) + `FileLogSink` (daily files, 5 MB roll-over, keeps 10) + `Redactor` (Core), with tests.
+- [x] Theme: `ThemeService` sets `Application.ThemeMode` (WPF0001 suppressed in that one place) and swaps `Themes/Light.xaml` / `Themes/Dark.xaml` semantic brushes. It follows the Windows app mode live when set to System. `Themes/Shared.xaml` holds fonts and sizes. **Your visual check is still pending (V9).**
+- [x] Window title "AJBrowser", 1280×800 default, 640×400 minimum, centred. *App icon deferred to Phase 9 (no artwork yet).*
+- [x] Add a `README.md` with build/run instructions.
+
+**Implementation notes (2026-11-26):** the agent built the solution with 0 warnings and 0 errors, ran 41 passing unit tests, and launched the Debug exe briefly. The window titled "AJBrowser" appeared, `%LOCALAPPDATA%\AJBrowser\` and its subfolders were created, and the startup log line was written. Not yet checked by a person: theme switching visuals, the test-exception dialog, and Visual Studio F5/Test Explorer. `coverlet.collector` was removed from the test template (not needed).
 
 **Files:** `AJBrowser.slnx`, `AJBrowser/App.xaml(.cs)`, `AJBrowser/MainWindow.xaml`, new `AJBrowser.Core/*`, `AJBrowser.Core.Tests/*`, `Directory.Build.props`, `README.md`.
 **Packages:** `CommunityToolkit.Mvvm` (MVVM source generators), `xunit` + `xunit.runner.visualstudio` + `Microsoft.NET.Test.Sdk` (tests).
@@ -725,7 +727,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 | V6 | Does `NewWindowRequested` + `args.NewWindow` keep `window.opener` for OAuth popups? | Spike | ☐ |
 | V7 | Which keys does WebView2 consume vs. forward to WPF (`Ctrl+L`, `Ctrl+T`, `Ctrl+W`, `F5`, …)? Should we set `AreBrowserAcceleratorKeysEnabled`? | Phase 2 | ☐ |
 | V8 | Is the WebView2 Find API available and stable in SDK 1.0.4370.26? | Phase 2 | ☐ |
-| V9 | How stable is the in-box WPF Fluent `ThemeMode` in .NET 10 for our controls? | Phase 0 | ☐ |
+| V9 | How stable is the in-box WPF Fluent `ThemeMode` in .NET 10 for our controls? | Phase 0 | ◐ Builds and runs; visual check of Light/Dark/System pending |
 | V10 | Velopack's current status and fit (self-contained WPF, per-user install, updates) | Phase 10 | ☐ |
 | V11 | Is the ICoreWebView2_22 three-parameter filter available in the installed SDK and runtime? | Spike | ☐ (docs confirm the API exists) |
 | V12 | Exact WPF `EnsureCoreWebView2Async(environment, controllerOptions)` overload for private mode | Phase 1 | ☐ |
@@ -754,7 +756,8 @@ _Fill in during Phase 0.5. Record the WebView2 runtime version for each finding.
 | 2026-11-26 | FFmpeg as an external LGPL process, introduced in Phase 6 | Remux only; license-friendly; not needed for direct files |
 | 2026-11-26 | App-managed HLS/DASH segment download (not FFmpeg network input) | Keeps cookies in-process, precise progress, resumable |
 | _pending_ | Ad-block engine: adblock-rust shim vs. extension vs. other | Decide after Phase 0.5 |
-| _pending_ | Theme: in-box Fluent `ThemeMode` vs. custom vs. WPF-UI | Decide in Phase 0 |
+| 2026-11-26 | No `global.json` for now | Only the .NET 11 SDK is installed locally; it builds net10.0. Revisit when CI is added. |
+| 2026-11-26 | Theme: in-box Fluent `ThemeMode` + own semantic brush dictionaries (tentative) | No dependency; switch to custom-only or WPF-UI if the V9 visual check finds problems |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---
