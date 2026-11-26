@@ -2,7 +2,10 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Runtime.InteropServices;
 using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using AJBrowser.ViewModels;
 
@@ -184,6 +187,8 @@ public partial class MainWindow : Window
         if (fullScreen)
         {
             _stateBeforeFullScreen = WindowState;
+            _windowChrome ??= WindowChrome.GetWindowChrome(this);
+            WindowChrome.SetWindowChrome(this, null); // no drag strip or resize edges while covering the screen
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
             if (WindowState == WindowState.Maximized)
@@ -197,9 +202,163 @@ public partial class MainWindow : Window
         {
             WindowStyle = WindowStyle.SingleBorderWindow;
             ResizeMode = ResizeMode.CanResize;
+            if (_windowChrome is not null)
+            {
+                WindowChrome.SetWindowChrome(this, _windowChrome);
+            }
+
             WindowState = _stateBeforeFullScreen;
         }
+
+        UpdateMaximizedPadding();
     }
+
+    // ---------------------------------------------------------------- title bar (the tab row)
+
+    private WindowChrome? _windowChrome;
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e) => ToggleMaximize();
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => SystemCommands.CloseWindow(this);
+
+    private void ToggleMaximize()
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            SystemCommands.RestoreWindow(this);
+        }
+        else
+        {
+            SystemCommands.MaximizeWindow(this);
+        }
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        UpdateMaximizedPadding();
+    }
+
+    /// <summary>
+    /// Without the system title bar, a maximized window extends past the screen by its (invisible) resize border,
+    /// which would cut off the tab row and the edges. Pad the content by that border while maximized (not in fullscreen).
+    /// </summary>
+    private void UpdateMaximizedPadding()
+    {
+        if (Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        if (WindowState == WindowState.Maximized && !_isInFullScreen && WindowChrome.GetWindowChrome(this) is not null)
+        {
+            root.Margin = new Thickness(MaximizedOverhang());
+        }
+        else
+        {
+            root.Margin = new Thickness(0);
+        }
+    }
+
+    /// <summary>How far a maximized window sticks out past the screen: the sizing frame + padded border, in WPF units.</summary>
+    private double MaximizedOverhang()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            return 8; // the usual value at 100% scaling
+        }
+
+        var dpi = GetDpiForWindow(hwnd);
+        var pixels = GetSystemMetricsForDpi(SmCxSizeFrame, dpi) + GetSystemMetricsForDpi(SmCxPaddedBorder, dpi);
+        return pixels * 96.0 / dpi;
+    }
+
+    private const int SmCxSizeFrame = 32;
+    private const int SmCxPaddedBorder = 92;
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetricsForDpi(int index, uint dpi);
+
+    /// <summary>
+    /// Windows 11 shows the snap-layout menu when the mouse rests on a window's maximize button. Windows only knows our
+    /// button is one if hit-testing says so: answer WM_NCHITTEST with HTMAXBUTTON over it, then handle the
+    /// non-client mouse messages ourselves (hover look, click to maximize/restore), since WPF no longer sees that mouse.
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        if (PresentationSource.FromVisual(this) is HwndSource source)
+        {
+            source.AddHook(WndProc);
+        }
+    }
+
+    private const int WmNcHitTest = 0x0084;
+    private const int WmNcMouseMove = 0x00A0;
+    private const int WmNcLButtonDown = 0x00A1;
+    private const int WmNcLButtonUp = 0x00A2;
+    private const int WmNcMouseLeave = 0x02A2;
+    private const int HtMaxButton = 9;
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        switch (msg)
+        {
+            case WmNcHitTest when IsOverMaximizeButton(lParam):
+                handled = true;
+                return HtMaxButton;
+
+            case WmNcMouseMove:
+                MaximizeButton.Tag = wParam == HtMaxButton ? (MaximizeButton.Tag as string == "Pressed" ? "Pressed" : "Hover") : null;
+                break;
+
+            case WmNcMouseLeave:
+                MaximizeButton.Tag = null;
+                break;
+
+            case WmNcLButtonDown when wParam == HtMaxButton:
+                MaximizeButton.Tag = "Pressed";
+                handled = true; // don't let Windows run its own (invisible) maximize button logic
+                break;
+
+            case WmNcLButtonUp when wParam == HtMaxButton:
+                MaximizeButton.Tag = null;
+                ToggleMaximize();
+                handled = true;
+                break;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private bool IsOverMaximizeButton(IntPtr lParam)
+    {
+        if (!IsChromeArea() || !MaximizeButton.IsVisible)
+        {
+            return false;
+        }
+
+        // lParam holds the screen position in physical pixels (signed 16-bit x and y: works on multiple monitors).
+        var x = unchecked((short)(long)lParam);
+        var y = unchecked((short)((long)lParam >> 16));
+        try
+        {
+            var point = MaximizeButton.PointFromScreen(new Point(x, y)); // converts pixels to WPF units (DPI-aware)
+            return point.X >= 0 && point.Y >= 0 && point.X < MaximizeButton.ActualWidth && point.Y < MaximizeButton.ActualHeight;
+        }
+        catch (InvalidOperationException)
+        {
+            return false; // not connected to a window yet
+        }
+    }
+
+    private bool IsChromeArea() => !_isInFullScreen && _viewModel.IsChromeVisible;
 
     // ---------------------------------------------------------------- menus
 

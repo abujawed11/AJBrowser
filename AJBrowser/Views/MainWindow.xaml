@@ -20,6 +20,19 @@
         Foreground="{DynamicResource TextPrimaryBrush}"
         PreviewKeyDown="Window_PreviewKeyDown">
 
+    <!--
+        No system title bar: the tab row is the title bar (like Chrome/Edge). WindowChrome keeps Windows' own behaviour:
+        drag the empty space next to the tabs, double-click it to maximize, right-click for the window menu, resize from
+        the edges. Clickable things in that strip opt in with WindowChrome.IsHitTestVisibleInChrome="True".
+    -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="40"
+                      ResizeBorderThickness="6"
+                      GlassFrameThickness="0,0,0,1"
+                      CornerRadius="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
@@ -56,11 +69,39 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ============ Tab strip ============ -->
+        <!-- ============ Tab strip = title bar ============ -->
         <Border Grid.Row="0"
                 Background="{DynamicResource AppBackgroundBrush}"
                 Visibility="{Binding IsChromeVisible, Converter={StaticResource BoolToVisibility}}">
-            <controls:TabStrip />
+            <DockPanel Height="40" LastChildFill="True">
+                <!-- Window buttons (the system ones are gone with the title bar). -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top"
+                            WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Content="&#xE921;" Style="{StaticResource CaptionButtonStyle}"
+                            Click="MinimizeButton_Click" ToolTip="Minimize" AutomationProperties.Name="Minimize" />
+                    <Button x:Name="MaximizeButton" Click="MaximizeButton_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource CaptionButtonStyle}">
+                                <Setter Property="Content" Value="&#xE922;" />
+                                <Setter Property="ToolTip" Value="Maximize" />
+                                <Setter Property="AutomationProperties.Name" Value="Maximize" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                        <Setter Property="Content" Value="&#xE923;" />
+                                        <Setter Property="ToolTip" Value="Restore down" />
+                                        <Setter Property="AutomationProperties.Name" Value="Restore down" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="&#xE8BB;" Style="{StaticResource CloseCaptionButtonStyle}"
+                            Click="CloseButton_Click" ToolTip="Close" AutomationProperties.Name="Close" />
+                </StackPanel>
+
+                <!-- Right margin: always leave some empty strip to drag the window by, even with many tabs. -->
+                <controls:TabStrip Margin="0,0,48,0" />
+            </DockPanel>
         </Border>
 
         <!-- ============ Toolbar ============ -->

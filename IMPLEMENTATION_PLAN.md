@@ -688,7 +688,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 
 **Checklist**
 - [ ] Light/dark/system theme switching at runtime. The WebView `PreferredColorScheme` follows it. Consistent spacing scale (4/8/12/16), typography (Segoe UI Variable, falling back to Segoe UI), icon sizes.
-- [ ] Tabs in the title bar via `WindowChrome` (caption buttons, drag regions, snap layouts on Windows 11, maximised border handling). **Risky, so keep the standard title bar until then.**
+- [x] Tabs in the title bar via `WindowChrome` (caption buttons, drag regions, snap layouts on Windows 11, maximised border handling). *Done early (2026-11-26, your request after Phase 3):* `WindowChrome` (caption 40, resize border 6, `GlassFrameThickness 0,0,0,1` keeps the DWM shadow); own minimize/maximize/close buttons (`CaptionButtonStyle`, close turns red); tabs and "+" opt in with `IsHitTestVisibleInChrome`; a 48 px empty strip always stays draggable; maximized content is padded by the real frame size (`GetSystemMetricsForDpi(SM_CXSIZEFRAME + SM_CXPADDEDBORDER)`); fullscreen removes the chrome and restores it after; a `WM_NCHITTEST` hook answers `HTMAXBUTTON` over our maximize button so **Windows 11 snap layouts** appear (hover/press look and click handled from the non-client messages). Checked with real mouse input: drag moves the window, double-click maximizes, Restore down, F11 in and out, snap-layout flyout on hover, maximize click. Not yet checked: multi-monitor and other scaling levels (100/150/200%).
 - [ ] Tab drag-to-reorder. Optionally tear off to a new window (deferred).
 - [ ] Accessibility: `AutomationProperties.Name` on all icon buttons, logical tab order, visible focus rectangles, high-contrast theme support, Narrator pass.
 - [ ] DPI: per-monitor V2 awareness (default in .NET WPF; verify in the manifest), test at 100/150/200% and when moving between monitors.
@@ -847,6 +847,7 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | 2026-11-26 | Settings apply immediately (no Save button); text fields apply on Enter or leaving the box, with inline validation | Matches Chrome/Edge settings; no "unsaved changes" state to manage |
 | 2026-11-26 | Site icons are stored per **host** in SQLite (migration v2), captured from the tabs' own favicons; no third-party favicon service | Covers History/Bookmarks/suggestions with no extra network requests and no privacy leak (asking e.g. Google's favicon service would reveal every visited site) |
 | 2026-11-26 | Sharper site icons: AJBrowser itself downloads a site's icon file (once per site and session, only while the stored icon is under 32 px), cookie-free and size-capped; SVG icons are not fetched | WebView2 only exposes 16 px favicons, which blur on scaled displays. Same request the page already made to the same site, so no new party learns anything; skipping SVG keeps theme-aware icons correctly coloured. Proper SVG rendering would need a library (deferred) |
+| 2026-11-26 | Remove the system title bar now (tabs in the title bar, Phase 9 item done early) | Your request; saves ~30 px and matches Chrome/Edge. Done with WPF's in-box `WindowChrome` plus a small hit-test hook for snap layouts, no new package |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---

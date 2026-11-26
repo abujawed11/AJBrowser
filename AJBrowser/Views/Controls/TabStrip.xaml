@@ -15,6 +15,7 @@
                  SelectedItem="{Binding SelectedTab}"
                  Background="Transparent"
                  BorderThickness="0"
+                 WindowChrome.IsHitTestVisibleInChrome="True"
                  AutomationProperties.Name="Tabs">
             <!-- No ScrollViewer: the panel needs the real available width so it can shrink tabs. -->
             <ListBox.Template>
@@ -162,6 +163,7 @@
                 Style="{StaticResource ToolbarButtonStyle}"
                 VerticalAlignment="Center"
                 Margin="4,0,0,0"
+                WindowChrome.IsHitTestVisibleInChrome="True"
                 ToolTip="New tab (Ctrl+T)"
                 AutomationProperties.Name="New tab" />
     </DockPanel>

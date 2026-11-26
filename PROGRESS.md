@@ -93,7 +93,7 @@ AJBrowser/                   WPF app (net10.0-windows)
   ViewModels/BookmarkEditorViewModel.cs  the star's edit panel
   ViewModels/InternalPageContracts.cs  IInternalPage, IPageHost, OpenTarget, TabServices
   ViewModels/Pages/          History/Bookmarks/SettingsPageViewModel (ajbrowser:// pages)
-  Views/MainWindow.xaml(.cs) tab strip, toolbar, ⋯ menu, bookmarks bar, find bar, one host per tab (web or internal page),
+  Views/MainWindow.xaml(.cs) no system title bar (WindowChrome; own caption buttons, snap-layout hook), tab strip, toolbar, ⋯ menu, bookmarks bar, find bar, one host per tab (web or internal page),
                              problem panel; code-behind: keyboard shortcuts, fullscreen, menus, bookmarks-bar clicks
   Views/Controls/            AddressBar (star + edit panel, suggestions drop-down), TabStrip (+ ShrinkingTabPanel), FindBar,
                              SiteIcon (favicon or fallback glyph)
@@ -165,6 +165,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 9. **Restart keeps everything:** bookmarks, history and settings are still there after a restart.
 10. Check the new pages in the Light theme too.
 11. **Site icons:** visit a few sites, then open History, Bookmarks, the bookmarks bar and the address-bar suggestions → each shows the site's own icon, sharp (not blurry) at your 125% scaling. Sites visited before this update show a globe or a soft 16 px icon until you visit them again; sites with SVG icons (for example GitHub) keep a 16 px icon on purpose. With History and Bookmarks open in two tabs, switching between them shows the right page each time.
+12. **No title bar** (tabs in the title bar, done early from Phase 9): drag the empty space right of the tabs to move the window; double-click it to maximize/restore; the − □ ✕ buttons at the top right work (✕ turns red); hover □ to get Windows 11's snap layouts; resize from all edges; when maximized nothing is cut off at the top; F11 fullscreen and back still work. If you use a second monitor or another scaling level, check there too.
 
 Known Phase 3 limits: bookmarks can't be reordered by dragging yet; closing the *last* tab closes the window and saves an empty session; history shows each page once, on the day of its latest visit; instantly-sent keystrokes right after Ctrl+T can lose their first characters (normal typing is fine).
 
