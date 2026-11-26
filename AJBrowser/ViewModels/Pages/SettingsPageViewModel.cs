@@ -91,7 +91,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
     [ObservableProperty]
     public partial string CustomSearchError { get; set; } = string.Empty;
 
-    // ---- downloads (used from Phase 4)
+    // ---- downloads
 
     public string DownloadFolderText => _settings.Current.DownloadFolder ?? $"{DefaultDownloadFolder} (default)";
 
@@ -103,9 +103,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
         set => _settings.Update(s => s with { AskWhereToSave = value });
     }
 
-    /// <summary>The Windows Downloads folder (the usual location; a moved Downloads folder is picked up in Phase 4).</summary>
-    public static string DefaultDownloadFolder =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+    /// <summary>The Windows Downloads folder, also when the user moved it.</summary>
+    public static string DefaultDownloadFolder => KnownFolders.Downloads;
 
     // ---- about
 

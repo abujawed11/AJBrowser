@@ -57,6 +57,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         BookmarkService bookmarks,
         FaviconService favicons,
         SessionService session,
+        DownloadsViewModel downloads,
         Func<TabViewModel> createTab,
         AppLogger log)
     {
@@ -68,6 +69,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _createTab = createTab;
         _log = log;
         DataFolder = paths.Root;
+        Downloads = downloads;
+        Downloads.OpenUrlRequested += OnDownloadsOpenUrlRequested;
+        Downloads.ShowAllRequested += OnDownloadsShowAllRequested;
         AdBlock = new AdBlockViewModel(adBlocker, () => SelectedTab, url => OpenTab(url, select: true, opener: SelectedTab));
 
         _settings.Changed += OnSettingsChanged;
@@ -98,6 +102,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public partial bool CanReopenClosedTab { get; set; }
 
     public string DataFolder { get; }
+
+    /// <summary>The toolbar download button, its flyout and the Downloads page.</summary>
+    public DownloadsViewModel Downloads { get; }
 
     /// <summary>The toolbar shield and its panel (and the switch on the Settings page).</summary>
     public AdBlockViewModel AdBlock { get; }
@@ -275,6 +282,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void ShowSettings() => OpenInternalPage(InternalPage.Settings);
+
+    /// <summary>Ctrl+J, or "Show all" in the downloads flyout.</summary>
+    [RelayCommand]
+    private void ShowDownloads() => OpenInternalPage(InternalPage.Downloads);
+
+    private void OnDownloadsShowAllRequested(object? sender, EventArgs e) => OpenInternalPage(InternalPage.Downloads);
+
+    /// <summary>Retrying a browser download: its address opens in a new tab and the engine downloads it again.</summary>
+    private void OnDownloadsOpenUrlRequested(object? sender, Uri uri) => OpenTab(uri, select: true, opener: SelectedTab);
 
     /// <summary>Ctrl+Shift+Delete: the History page with "Clear browsing data" open.</summary>
     [RelayCommand]
@@ -476,6 +492,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _bookmarks.Changed -= OnBookmarksChanged;
         _favicons.Changed -= OnBookmarksChanged;
         Tabs.CollectionChanged -= OnTabsCollectionChanged;
+        Downloads.OpenUrlRequested -= OnDownloadsOpenUrlRequested;
+        Downloads.ShowAllRequested -= OnDownloadsShowAllRequested;
         AdBlock.Dispose();
         foreach (var tab in Tabs)
         {

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using AJBrowser.Browser;
+using AJBrowser.Core.Downloads;
 using AJBrowser.Core.Infrastructure;
 using AJBrowser.Core.Logging;
 using AJBrowser.Core.Navigation;
@@ -41,6 +42,18 @@ public sealed class AppServices : IDisposable
         Favicons = new FaviconService(new FaviconRepository(database), CreateLogger(nameof(FaviconService)));
         Session = new SessionService(new SessionRepository(database), CreateLogger(nameof(SessionService)));
 
+        // Downloads (Phase 4). Created on the UI thread, so the manager raises its events there.
+        var namer = new FileNamer();
+        DownloadManager = new DownloadManager(
+            new DownloadRepository(database),
+            new HttpFileDownloader(new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
+            namer);
+        var downloadLog = CreateLogger(nameof(DownloadManager));
+        DownloadManager.PersistenceFailed += (_, ex) => downloadLog.Warn("Saving a download's state failed", ex);
+        DownloadInterceptor = new DownloadInterceptor(
+            DownloadManager, namer, settings, AskSavePath, () => KnownFolders.Downloads, CreateLogger(nameof(DownloadInterceptor)));
+        Downloads = new DownloadsViewModel(DownloadManager, DownloadInterceptor, shell, settings, CreateLogger(nameof(DownloadsViewModel)));
+
         _tabServices = new TabServices(
             AddressResolver,
             () => Settings.Current.HomePageUri,
@@ -76,6 +89,15 @@ public sealed class AppServices : IDisposable
     /// <summary>Site icons for History, Bookmarks, the bookmarks bar and suggestions.</summary>
     public FaviconService Favicons { get; }
     public SessionService Session { get; }
+
+    /// <summary>Owns every download and its database rows.</summary>
+    public DownloadManager DownloadManager { get; }
+
+    /// <summary>Takes over downloads started by pages (attached to every WebView).</summary>
+    public DownloadInterceptor DownloadInterceptor { get; }
+
+    /// <summary>The download list shown by the toolbar flyout and the Downloads page.</summary>
+    public DownloadsViewModel Downloads { get; }
 
     /// <summary>Set by App once the main window's view model exists (the Settings page shows the same switch).</summary>
     public AdBlockViewModel? AdBlock { get; set; }
@@ -121,7 +143,7 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Creates a tab (WebView wrapper + its view model). Not started yet: call <see cref="TabViewModel.StartAsync"/>.</summary>
     public TabViewModel CreateTab() =>
-        new(new BrowserTab(Browser, Extensions, Theme, CreateLogger(nameof(BrowserTab))), _tabServices);
+        new(new BrowserTab(Browser, Extensions, DownloadInterceptor, Theme, CreateLogger(nameof(BrowserTab))), _tabServices);
 
     /// <summary>Creates the view model of an internal page for the tab that will show it.</summary>
     private IInternalPage CreatePage(InternalPage page, IPageHost host) => page switch
@@ -134,6 +156,7 @@ public sealed class AppServices : IDisposable
             Shell,
             host,
             Paths.Root),
+        InternalPage.Downloads => new DownloadsPageViewModel(Downloads),
         _ => throw new ArgumentOutOfRangeException(nameof(page), page, null),
     };
 
@@ -149,6 +172,24 @@ public sealed class AppServices : IDisposable
         AddressResolver.SearchTemplate = SearchEngines.TemplateFor(current);
     }
 
+    /// <summary>"Ask where to save": a Save dialog over the main window. Returns the chosen path, or null if cancelled.</summary>
+    private static string? AskSavePath(string folder, string suggestedName)
+    {
+        var extension = Path.GetExtension(suggestedName);
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Save as",
+            InitialDirectory = folder,
+            FileName = suggestedName,
+            Filter = extension.Length > 1
+                ? $"{extension[1..].ToUpperInvariant()} file (*{extension})|*{extension}|All files (*.*)|*.*"
+                : "All files (*.*)|*.*",
+            OverwritePrompt = true,
+            AddExtension = extension.Length > 1,
+        };
+        return dialog.ShowDialog(Application.Current?.MainWindow) == true ? dialog.FileName : null;
+    }
+
     private static AppTheme ToAppTheme(ThemeSetting theme) => theme switch
     {
         ThemeSetting.Light => AppTheme.Light,
@@ -159,6 +200,7 @@ public sealed class AppServices : IDisposable
     public void Dispose()
     {
         Settings.Changed -= OnSettingsChanged;
+        Downloads.Dispose();
         Theme.Dispose();
         LogSink.Dispose();
     }

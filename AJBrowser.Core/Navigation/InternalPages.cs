@@ -6,11 +6,12 @@ public enum InternalPage
     History,
     Bookmarks,
     Settings,
+    Downloads,
 }
 
 /// <summary>
 /// Addresses for internal pages, like Chrome's chrome://history: <c>ajbrowser://history</c>, <c>ajbrowser://bookmarks</c>,
-/// <c>ajbrowser://settings</c>. They can be typed in the address bar and are saved in the session like web pages.
+/// <c>ajbrowser://settings</c>, <c>ajbrowser://downloads</c>. They can be typed in the address bar and are saved in the session like web pages.
 /// They are never handed to WebView2.
 /// </summary>
 public static class InternalPages
@@ -24,6 +25,7 @@ public static class InternalPages
         InternalPage.History => "History",
         InternalPage.Bookmarks => "Bookmarks",
         InternalPage.Settings => "Settings",
+        InternalPage.Downloads => "Downloads",
         _ => page.ToString(),
     };
 

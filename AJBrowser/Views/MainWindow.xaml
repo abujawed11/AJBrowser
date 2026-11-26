@@ -46,6 +46,9 @@
         <DataTemplate DataType="{x:Type pagevm:SettingsPageViewModel}">
             <pages:SettingsPage />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type pagevm:DownloadsPageViewModel}">
+            <pages:DownloadsPage />
+        </DataTemplate>
 
         <!-- Icon of a bookmarks-bar menu item. x:Shared="False": each menu item gets its own copy (a visual can only have one parent). -->
         <controls:SiteIcon x:Key="BookmarkMenuIcon" x:Shared="False" Source="{Binding Icon}" Glyph="{Binding Glyph}" />
@@ -158,6 +161,7 @@
                                 <Separator />
                                 <MenuItem Header="History" InputGestureText="Ctrl+H" Command="{Binding ShowHistoryCommand}" />
                                 <MenuItem Header="Bookmarks" InputGestureText="Ctrl+Shift+O" Command="{Binding ShowBookmarksCommand}" />
+                                <MenuItem Header="Downloads" InputGestureText="Ctrl+J" Command="{Binding ShowDownloadsCommand}" />
                                 <MenuItem Header="Bookmark this page" InputGestureText="Ctrl+D" Command="{Binding SelectedTab.BookmarkPageCommand}" />
                                 <MenuItem Header="Show or hide bookmarks bar" InputGestureText="Ctrl+Shift+B" Command="{Binding ToggleBookmarksBarCommand}" />
                                 <MenuItem Header="Clear browsing data" InputGestureText="Ctrl+Shift+Del" Command="{Binding ShowClearBrowsingDataCommand}" />
@@ -187,6 +191,63 @@
                             </ContextMenu>
                         </Button.ContextMenu>
                     </Button>
+
+                    <!--
+                        Downloads (Phase 4). A ring around the icon shows the progress of running downloads (it spins when
+                        a size is unknown). Click for the flyout with the newest downloads; it also opens by itself when a
+                        page starts a download.
+                    -->
+                    <Button x:Name="DownloadsButton" DockPanel.Dock="Right"
+                            Click="DownloadsButton_Click"
+                            Style="{StaticResource ToolbarButtonStyle}"
+                            VerticalAlignment="Center"
+                            ToolTip="{Binding Downloads.ButtonToolTip}"
+                            AutomationProperties.Name="Downloads">
+                        <Grid Width="24" Height="24">
+                            <controls:ProgressArc Value="{Binding Downloads.ActiveFraction}"
+                                                  IsIndeterminate="{Binding Downloads.IsActiveIndeterminate}"
+                                                  Stroke="{DynamicResource AccentBrush}"
+                                                  Track="{DynamicResource ChromeBorderBrush}"
+                                                  Thickness="2"
+                                                  Visibility="{Binding Downloads.HasActive, Converter={StaticResource BoolToVisibility}}" />
+                            <TextBlock Text="&#xE896;" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="{StaticResource IconSize}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Downloads.HasActive}" Value="True">
+                                                <Setter Property="FontSize" Value="12" />
+                                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </Button>
+
+                    <Popup x:Name="DownloadsPopup"
+                           PlacementTarget="{Binding ElementName=DownloadsButton}"
+                           Placement="Bottom"
+                           HorizontalOffset="-326" VerticalOffset="-4"
+                           StaysOpen="False"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade"
+                           Opened="DownloadsPopup_Opened"
+                           Closed="DownloadsPopup_Closed">
+                        <Border Margin="12" Width="360"
+                                Background="{DynamicResource FlyoutBackgroundBrush}"
+                                BorderBrush="{DynamicResource ChromeBorderBrush}" BorderThickness="1"
+                                CornerRadius="8" Padding="10,12"
+                                TextElement.Foreground="{DynamicResource TextPrimaryBrush}"
+                                PreviewKeyDown="DownloadsPopup_PreviewKeyDown">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="16" ShadowDepth="4" Opacity="0.25" Direction="270" />
+                            </Border.Effect>
+                            <controls:DownloadPanel x:Name="DownloadPanel" DataContext="{Binding Downloads}"
+                                                    CloseRequested="DownloadPanel_CloseRequested" />
+                        </Border>
+                    </Popup>
 
                     <!--
                         Ad blocker shield (Phase 2.5). Green filled shield with a tick = blocking; grey shield with a slash = off

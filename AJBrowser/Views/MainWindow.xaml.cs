@@ -29,8 +29,10 @@ public partial class MainWindow : Window
         _viewModel.CloseWindowRequested += OnCloseWindowRequested;
         Closing += OnWindowClosing;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        _viewModel.Downloads.DownloadStarted += OnDownloadStarted;
         Closed += (_, _) =>
         {
+            _viewModel.Downloads.DownloadStarted -= OnDownloadStarted;
             _viewModel.FocusAddressBarRequested -= OnFocusAddressBarRequested;
             _viewModel.CloseWindowRequested -= OnCloseWindowRequested;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
@@ -68,6 +70,7 @@ public partial class MainWindow : Window
                     case >= Key.NumPad1 and <= Key.NumPad9: vm.SelectTabByNumber(key - Key.NumPad0); return true;
                     case Key.L: FocusAddressBar(); return true;
                     case Key.H: vm.ShowHistoryCommand.Execute(null); return true;
+                    case Key.J: vm.ShowDownloadsCommand.Execute(null); return true;
                     case Key.D: tab?.BookmarkPageCommand.Execute(null); return true;
                     case Key.R: tab?.ReloadCommand.Execute(null); return true;
                     case Key.F: OpenFind(); return true;
@@ -138,7 +141,7 @@ public partial class MainWindow : Window
                         return true;
 
                     // Esc stops loading, but text boxes (address bar, find bar) use Esc themselves.
-                    case Key.Escape when tab is { IsLoading: true } && Keyboard.FocusedElement is not TextBox && !AdBlockPopup.IsOpen:
+                    case Key.Escape when tab is { IsLoading: true } && Keyboard.FocusedElement is not TextBox && !AdBlockPopup.IsOpen && !DownloadsPopup.IsOpen:
                         tab.Stop();
                         return true;
                 }
@@ -480,6 +483,46 @@ public partial class MainWindow : Window
 
     /// <summary>The Settings link runs its command (opens a tab); also close the panel.</summary>
     private void AdBlockSettings_Click(object sender, RoutedEventArgs e) => AdBlockPopup.IsOpen = false;
+
+    // ---------------------------------------------------------------- downloads flyout
+
+    private long _downloadsPopupClosedAt;
+
+    /// <summary>Toggles the flyout (same double-click guard as the shield's panel).</summary>
+    private void DownloadsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (Environment.TickCount64 - _downloadsPopupClosedAt < 250)
+        {
+            return;
+        }
+
+        DownloadsPopup.IsOpen = true;
+    }
+
+    /// <summary>A page started a download: show it in the flyout, like Chrome/Edge (not over a fullscreen video).</summary>
+    private void OnDownloadStarted(object? sender, EventArgs e)
+    {
+        if (!_viewModel.IsFullScreen && IsActive)
+        {
+            DownloadsPopup.IsOpen = true;
+        }
+    }
+
+    private void DownloadsPopup_Opened(object? sender, EventArgs e) => _viewModel.Downloads.RefreshFiles();
+
+    private void DownloadsPopup_Closed(object? sender, EventArgs e) => _downloadsPopupClosedAt = Environment.TickCount64;
+
+    private void DownloadPanel_CloseRequested(object? sender, EventArgs e) => DownloadsPopup.IsOpen = false;
+
+    private void DownloadsPopup_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            DownloadsPopup.IsOpen = false;
+            DownloadsButton.Focus();
+            e.Handled = true;
+        }
+    }
 
     private void OpenDiagnostics_Click(object sender, RoutedEventArgs e)
     {

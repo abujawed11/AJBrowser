@@ -1,0 +1,131 @@
+<UserControl x:Class="AJBrowser.Views.Pages.DownloadsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AJBrowser.ViewModels"
+             xmlns:pagevm="clr-namespace:AJBrowser.ViewModels.Pages"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=pagevm:DownloadsPageViewModel, IsDesignTimeCreatable=False}"
+             d:DesignWidth="900" d:DesignHeight="700"
+             Background="{DynamicResource ContentBackgroundBrush}">
+    <!-- DataContext: DownloadsPageViewModel (ajbrowser://downloads, Ctrl+J). -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+        <StackPanel MaxWidth="860" Margin="32,24">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Open folder" Command="{Binding Downloads.OpenDownloadFolderCommand}" Margin="0,0,8,0"
+                            ToolTip="{Binding Downloads.DownloadFolder}" />
+                    <Button Content="Clear finished" Command="{Binding Downloads.ClearFinishedCommand}"
+                            IsEnabled="{Binding Downloads.HasFinished}"
+                            ToolTip="Remove completed, failed and cancelled downloads from this list (the files stay)" />
+                </StackPanel>
+                <TextBlock Text="Downloads" Style="{StaticResource PageTitleStyle}" Margin="0" />
+            </DockPanel>
+
+            <Grid Margin="0,16,0,0">
+                <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalContentAlignment="Center"
+                         AutomationProperties.Name="Search downloads" />
+                <TextBlock Text="Search downloads" IsHitTestVisible="False" Margin="12,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SearchText}" Value="">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+
+            <TextBlock Text="{Binding EmptyText}" Margin="0,32,0,0" HorizontalAlignment="Center"
+                       Style="{StaticResource SecondaryTextStyle}"
+                       Visibility="{Binding IsEmpty, Converter={StaticResource PageBoolToVisibility}}" />
+
+            <ItemsControl ItemsSource="{Binding Items}" Focusable="False" Margin="0,16,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:DownloadItemViewModel}">
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8" Padding="12,10">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <Button Content="&#xE769;" Style="{StaticResource RowIconButtonStyle}" Command="{Binding PauseCommand}"
+                                            Visibility="{Binding CanPause, Converter={StaticResource PageBoolToVisibility}}"
+                                            ToolTip="Pause" AutomationProperties.Name="Pause" />
+                                    <Button Content="&#xE768;" Style="{StaticResource RowIconButtonStyle}" Command="{Binding ResumeCommand}"
+                                            Visibility="{Binding CanResume, Converter={StaticResource PageBoolToVisibility}}"
+                                            ToolTip="Resume" AutomationProperties.Name="Resume" />
+                                    <Button Content="&#xE72C;" Style="{StaticResource RowIconButtonStyle}" Command="{Binding RetryCommand}"
+                                            Visibility="{Binding CanRetry, Converter={StaticResource PageBoolToVisibility}}"
+                                            ToolTip="Retry (downloads it again in a new tab)" AutomationProperties.Name="Retry" />
+                                    <Button Content="&#xE711;" Style="{StaticResource RowIconButtonStyle}" Command="{Binding CancelCommand}"
+                                            Visibility="{Binding CanCancel, Converter={StaticResource PageBoolToVisibility}}"
+                                            ToolTip="Cancel" AutomationProperties.Name="Cancel download" />
+                                    <Button Content="&#xE838;" Style="{StaticResource RowIconButtonStyle}" Command="{Binding ShowInFolderCommand}"
+                                            Visibility="{Binding IsCompleted, Converter={StaticResource PageBoolToVisibility}}"
+                                            ToolTip="Show in folder" AutomationProperties.Name="Show in folder" />
+                                    <Button Content="&#xE71B;" Style="{StaticResource RowIconButtonStyle}" Command="{Binding CopyLinkCommand}"
+                                            ToolTip="Copy download link" AutomationProperties.Name="Copy download link" />
+                                    <Button Content="&#xE74D;" Style="{StaticResource RowIconButtonStyle}" Command="{Binding RemoveCommand}"
+                                            Visibility="{Binding CanRemove, Converter={StaticResource PageBoolToVisibility}}"
+                                            ToolTip="Remove from list (the file stays)" AutomationProperties.Name="Remove from list" />
+                                </StackPanel>
+
+                                <TextBlock DockPanel.Dock="Left" Text="&#xE8A5;" FontFamily="{StaticResource IconFontFamily}" FontSize="24"
+                                           VerticalAlignment="Center" Margin="0,0,14,0" Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                                <StackPanel VerticalAlignment="Center">
+                                    <!-- The name opens a finished file; otherwise it's plain text (not clickable). -->
+                                    <Button HorizontalAlignment="Left" Command="{Binding OpenCommand}"
+                                            IsHitTestVisible="{Binding CanOpen}" Focusable="{Binding CanOpen}"
+                                            ToolTip="{Binding ToolTip}" AutomationProperties.Name="{Binding FileName}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource LinkButtonStyle}">
+                                                <Setter Property="Padding" Value="0" />
+                                                <Setter Property="Height" Value="Auto" />
+                                                <Setter Property="Margin" Value="0" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding CanOpen}" Value="False">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                        <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                                    </Button>
+                                    <TextBlock Margin="0,2,0,0" TextTrimming="CharacterEllipsis" FontSize="{StaticResource CaptionFontSize}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run Text="{Binding Host, Mode=OneWay}" />
+                                        <Run Text=" · " />
+                                        <Run Text="{Binding StartedText, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <ProgressBar Height="3" MinHeight="0" Margin="0,6,0,2" BorderThickness="0"
+                                                 Maximum="100" Value="{Binding Percent, Mode=OneWay}"
+                                                 IsIndeterminate="{Binding IsIndeterminate, Mode=OneWay}"
+                                                 Foreground="{DynamicResource AccentBrush}"
+                                                 Visibility="{Binding ShowProgress, Converter={StaticResource PageBoolToVisibility}}"
+                                                 AutomationProperties.Name="Download progress" />
+                                    <TextBlock Text="{Binding StatusText}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsProblem}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

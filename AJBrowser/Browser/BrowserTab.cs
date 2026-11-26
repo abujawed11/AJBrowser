@@ -31,6 +31,7 @@ public sealed class BrowserTab : IDisposable
 
     private readonly BrowserEnvironment _environment;
     private readonly ExtensionManager _extensions;
+    private readonly DownloadInterceptor _downloads;
     private readonly ThemeService _theme;
     private readonly AppLogger _log;
     private readonly Grid _host = new();
@@ -45,10 +46,11 @@ public sealed class BrowserTab : IDisposable
     private int _faviconVersion;
     private bool _disposed;
 
-    public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, ThemeService theme, AppLogger log)
+    public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, DownloadInterceptor downloads, ThemeService theme, AppLogger log)
     {
         _environment = environment;
         _extensions = extensions;
+        _downloads = downloads;
         _theme = theme;
         _log = log;
         _theme.ThemeChanged += OnThemeChanged;
@@ -330,6 +332,7 @@ public sealed class BrowserTab : IDisposable
         core.Find.MatchCountChanged += OnFindResultsChanged;
         core.Find.ActiveMatchIndexChanged += OnFindResultsChanged;
         webView.ZoomFactorChanged += OnZoomFactorChanged;
+        _downloads.Attach(core);
 
         ZoomFactor = webView.ZoomFactor;
         UpdateState(core);
@@ -354,6 +357,7 @@ public sealed class BrowserTab : IDisposable
                 _core.ContextMenuRequested -= OnContextMenuRequested;
                 _core.Find.MatchCountChanged -= OnFindResultsChanged;
                 _core.Find.ActiveMatchIndexChanged -= OnFindResultsChanged;
+                _downloads.Detach(_core);
             }
             catch (Exception ex)
             {

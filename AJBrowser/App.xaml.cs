@@ -47,6 +47,7 @@ public partial class App : Application
                 _services.Bookmarks,
                 _services.Favicons,
                 _services.Session,
+                _services.Downloads,
                 _services.CreateTab,
                 _services.CreateLogger(nameof(MainWindowViewModel)));
             _services.AdBlock = _mainViewModel.AdBlock;
@@ -67,11 +68,13 @@ public partial class App : Application
 
             // Bookmarks (for the bar and the star) load in the background while the tabs open.
             var bookmarksLoaded = Task.WhenAll(_services.Favicons.LoadAsync(), _services.Bookmarks.LoadAsync());
+            var downloadsLoaded = LoadDownloadsAsync(_services);
 
             // The saved session (if "Continue where you left off" is on), then URLs or files from the command line;
             // otherwise one tab with the home page. Starting tabs never throws: problems show in each tab's page area.
             await _mainViewModel.OpenStartupTabsAsync(CommandLineUrls.Parse(e.Args, _services.AddressResolver, System.IO.File.Exists));
             await bookmarksLoaded;
+            await downloadsLoaded;
 
 #if DEBUG
             // Phase 0.5 spike: "--diagnostics" opens the Diagnostics window. "--diagnostics-auto" also runs the
@@ -102,10 +105,39 @@ public partial class App : Application
         }
     }
 
+    /// <summary>The download list (downloads that were running when AJBrowser closed are marked Interrupted/Paused first).</summary>
+    private async Task LoadDownloadsAsync(AppServices services)
+    {
+        try
+        {
+            await services.DownloadManager.InitializeAsync();
+            services.Downloads.Load();
+        }
+        catch (Exception ex)
+        {
+            _log?.Error("Loading the download list failed", ex);
+        }
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         _log?.Info($"AJBrowser exiting with code {e.ApplicationExitCode}");
         _mainViewModel?.Dispose();
+
+        // App downloads pause (partial files kept for next time) and pending database writes finish. Browser downloads
+        // end with the browser process and show as Interrupted next time. Run off the UI thread so nothing deadlocks.
+        if (_services is { } services)
+        {
+            try
+            {
+                Task.Run(() => services.DownloadManager.ShutdownAsync(TimeSpan.FromSeconds(2))).Wait(TimeSpan.FromSeconds(3));
+            }
+            catch (Exception ex)
+            {
+                _log?.Warn("Stopping downloads at exit failed", ex);
+            }
+        }
+
         _services?.Dispose();
         base.OnExit(e);
     }

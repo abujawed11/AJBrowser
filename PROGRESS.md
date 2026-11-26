@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 in progress: checkpoint 4a ✅ (core download engine), next 4b**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 in progress: 4a ✅ (core download engine), 4b 🔶 built (download UI, awaiting your check), next 4c**
 
 ---
 
@@ -42,8 +42,8 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **357 passing tests**.
-   - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** is the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
+   - Test Explorer: expect **390 passing tests**.
+   - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
 4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (`Data\ajbrowser.db` = history, bookmarks, session; `Data\settings.json`; logs, WebView2 profile, unpacked ad blocker, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
@@ -76,10 +76,13 @@ AJBrowser/                   WPF app (net10.0-windows)
   Extensions/uBOLite_2026.1124.1811.chromium.zip  official release, unmodified (GPLv3), copied to output
   Browser/BrowserTab.cs      wraps one WebView2: Configure() = ALL per-WebView setup, navigation, crash recovery,
                              popups, favicon, zoom, find, fullscreen, context menu
+  Browser/DownloadInterceptor.cs  (4b) DownloadStarting → Handled, file name/folder (or Save dialog), registers with
+                             DownloadManager, forwards progress; pause/resume/cancel of live browser downloads
   Browser/PopupRequest.cs    hands a new tab's WebView to WebView2 as a popup (deferral + NewWindow)
   Browser/PageProblem.cs     error/crash panel model + which navigation errors get a panel
   Services/ThemeService.cs   Fluent ThemeMode (WPF0001 suppressed here) + Light/Dark brush swap, follows Windows
-  Services/ShellService.cs   open folder in Explorer, open URL in the default browser, open a text file in Notepad
+  Services/ShellService.cs   open folder, open file, show file in folder (SHOpenFolderAndSelectItems), open URL, Notepad
+  Services/KnownFolders.cs   the Windows Downloads folder (also when moved)
   Services/HistoryService.cs record visits/titles (queued background writes), search, delete, clear range
   Services/BookmarkService.cs all bookmarks in memory + write-through to SQLite, folder choices, Changed event
   Services/SessionService.cs debounced (1 s) session saves + final synchronous save at exit
@@ -88,16 +91,18 @@ AJBrowser/                   WPF app (net10.0-windows)
                              startup/session restore, bookmarks bar, internal pages, session snapshot
   ViewModels/TabViewModel.cs address bar, title, favicon, loading, back/forward, zoom, find, blocked popups, problem panel,
                              internal page or web page, lazy engine start, history recording, star, suggestions
+  ViewModels/DownloadsViewModel.cs    (4b) download list for button ring, flyout and page; routes actions
+  ViewModels/DownloadItemViewModel.cs (4b) one download row (status text, progress, which buttons apply)
   ViewModels/AdBlockViewModel.cs      ad-block state shared by the shield and the Settings page
   ViewModels/SuggestionsViewModel.cs  address-bar suggestions (debounced, ranked in Core)
   ViewModels/BookmarkEditorViewModel.cs  the star's edit panel
   ViewModels/InternalPageContracts.cs  IInternalPage, IPageHost, OpenTarget, TabServices
-  ViewModels/Pages/          History/Bookmarks/SettingsPageViewModel (ajbrowser:// pages)
+  ViewModels/Pages/          History/Bookmarks/Settings/DownloadsPageViewModel (ajbrowser:// pages)
   Views/MainWindow.xaml(.cs) no system title bar (WindowChrome; own caption buttons, snap-layout hook), tab strip, toolbar, ⋯ menu, bookmarks bar, find bar, one host per tab (web or internal page),
                              problem panel; code-behind: keyboard shortcuts, fullscreen, menus, bookmarks-bar clicks
   Views/Controls/            AddressBar (star + edit panel, suggestions drop-down), TabStrip (+ ShrinkingTabPanel), FindBar,
-                             SiteIcon (favicon or fallback glyph)
-  Views/Pages/               HistoryPage, BookmarksPage, SettingsPage (WPF views shown in a tab)
+                             SiteIcon (favicon or fallback glyph), DownloadPanel (downloads flyout), ProgressArc (button ring)
+  Views/Pages/               HistoryPage, BookmarksPage, SettingsPage, DownloadsPage (WPF views shown in a tab)
   Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle,
                              SwitchToggleStyle), Pages.xaml (internal page styles)
   Diagnostics/               Phase 0.5 spike, DEBUG ONLY (excluded from Release via csproj)
@@ -113,9 +118,10 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
                              History/Bookmark/Session/Favicon/DownloadRepository (async, SQL off the UI thread); schema v3
   Settings/                  AppSettings (record, defaults, Normalize), SettingsStore (settings.json), SearchEngines
   Downloads/                 (Phase 4a) DownloadItem + state machine, FileNamer, TransferRateEstimator,
-                             HttpFileDownloader (.ajpart, resume, retry), DownloadManager (queue, pause/resume/cancel, saving)
+                             HttpFileDownloader (.ajpart, resume, retry), DownloadManager (queue, pause/resume/cancel, saving);
+                             (4b) DownloadText (sizes, speed, time left, status line), BrowserDownloadStatus (WebView2 states)
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads (357 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads (390 tests)
 ```
 
 **Packages:**
@@ -133,7 +139,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 2 Tabs | 🔶 Built | Agent: build, 166 tests, launch with 2 startup tabs + script popup blocked. **You:** the manual checks in §6. |
 | 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, launches (installs on first start, reused on the next, off/on choice kept), toolbar shield + switch driven via UI Automation. **You:** ad blocking confirmed working; remaining checks in §6. |
 | 3 Bookmarks, history, settings | 🔶 Built | Agent: build, 298 tests, sharp site icons in lists and tabs, app driven via UI Automation (star, history, bookmarks, settings, suggestions, session restore of 4 tabs, clear history). **You:** the checks in §6. |
-| 4 Download manager | 🔶 **In progress** | Checkpoint **4a done** (Core: model, FileNamer, HttpFileDownloader with resume/retry, DownloadManager, `downloads` table v3; 357 tests). **Next 4b:** catch browser downloads + download button/flyout + Downloads page. **Then 4c:** tab close with active downloads, startup cleanup, settings, exit confirmation. See plan Phase 4 "Checkpoint 4a". |
+| 4 Download manager | 🔶 **In progress** | **4a done** (Core engine, 357 tests). **4b built** (DownloadInterceptor, toolbar button with progress ring + flyout, `ajbrowser://downloads` page, all actions; 390 tests, build 0 warnings). Agent did **not** launch the app this time (it would have written into your real data folder), so **you:** the 4b checks in §6. **Next 4c:** keep a WebView alive while it owns downloads (fixes downloads from new-tab links), startup `.ajpart` cleanup, max-concurrent setting, exit confirmation. See plan Phase 4 "Checkpoint 4b". |
 | 5–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
@@ -153,7 +159,21 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: check Phase 3 (and anything left from 1, 2, 2.5), then Phase 4
+## 6. Next task: check Phase 4b, then continue with 4c
+
+**Phase 4b checks** (F5, Debug). Not run by the agent, so this is the first real test. A good test file: any large public test download (for example a speed-test site's 100 MB file).
+1. **Download from a normal link** (same tab): Edge's own download bubble does **not** appear; instead AJBrowser's flyout opens under the ↓ button with the file, a progress bar and "x MB of y MB · speed · time left". The ↓ button shows a blue ring filling up while it runs. The file lands in your Downloads folder (or the folder from Settings) with its proper name; downloading it again gives `name (1).ext`.
+2. **Pause / Resume / Cancel** in the flyout or on the page: Pause → "Paused · …", Resume continues, Cancel → "Cancelled" and no partial file is left in the folder. (Some servers can't pause; then there's no Pause button.)
+3. **Finished:** click the row in the flyout → the file opens; the folder button → Explorer opens with the file selected. Delete the file in Explorer, reopen the flyout → "Moved or deleted".
+4. **Downloads page:** Ctrl+J (or ⋯ → Downloads, or "Show all downloads"): every download, newest first; search filters by name or address; Copy link, Remove (file stays), Clear finished, Open folder all work.
+5. **Unknown size** (a server that doesn't send a size): the ring spins instead of filling; the text shows only the received amount.
+6. **Ask where to save:** Settings → Downloads → turn on "Ask where to save" → a Save dialog appears for each download; Cancel in the dialog → no download. Also try changing the download folder in Settings.
+7. **Restart mid-download:** start a big download, close AJBrowser, start again → it's listed as "Interrupted · AJBrowser was closed during the download" with a Retry button; Retry opens the link in a new tab and downloads it again (the blank tab stays for now; 4c closes it).
+8. Check the flyout and page in the Light theme too, and with the window narrow.
+
+**Known 4b gap (fixed in 4c):** a download link that opens in a **new tab/popup** stops at once (stays at 0 or freezes), because Chromium closes that popup and closing a WebView freezes its downloads (spike F5). Use same-tab links for testing 4b.
+
+## 6b. Still open from earlier phases: check Phase 3 (and anything left from 1, 2, 2.5)
 
 **Phase 3 checks** (F5, Debug). Your data starts empty: the agent deleted its test database and settings.
 1. **History:** visit 3–4 sites, then Ctrl+H (or ⋯ → History). They're listed under "Today" with times; the search box filters; the 🗑 removes one; clicking a row opens it in the tab, middle-click opens it in a background tab.
@@ -207,7 +227,7 @@ Report anything odd, and the agent will fix it before Phase 4.
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 4 with checkpoint 4b.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 4 with checkpoint 4c.
 
 ## 7. uBlock Origin Lite test (V5): done
 
