@@ -46,6 +46,15 @@ public static class Migrations
             PRIMARY KEY (window_id, position)
         );
         """,
+
+        // ---- v2 (Phase 3 follow-up): one icon per site, so History, Bookmarks and suggestions can show it.
+        """
+        CREATE TABLE favicons (
+            host       TEXT    PRIMARY KEY,          -- lower-case host name, for example "www.google.com"
+            png        BLOB    NOT NULL,             -- the icon as PNG, as WebView2 delivered it
+            updated_at INTEGER NOT NULL              -- Unix time in milliseconds (UTC)
+        );
+        """,
     ];
 
     /// <summary>The schema version this build of AJBrowser expects.</summary>

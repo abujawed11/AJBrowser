@@ -42,11 +42,12 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
     {
         _browser = browser;
         _services = services;
-        Suggestions = new SuggestionsViewModel(services.History, services.Bookmarks, services.Log);
+        Suggestions = new SuggestionsViewModel(services.History, services.Bookmarks, services.Favicons, services.Log);
 
         _browser.StateChanged += OnBrowserStateChanged;
         _browser.NavigationStarted += OnBrowserNavigationStarted;
         _browser.PageLoaded += OnBrowserPageLoaded;
+        _browser.FaviconLoaded += OnBrowserFaviconLoaded;
         _browser.ProblemOccurred += OnBrowserProblemOccurred;
         _browser.PopupRequested += OnBrowserPopupRequested;
         _browser.PopupBlocked += OnBrowserPopupBlocked;
@@ -669,6 +670,10 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _services.History.RecordVisit(url, _browser.Title);
     }
 
+    /// <summary>Remember the site's icon so History, Bookmarks and suggestions can show it.</summary>
+    private void OnBrowserFaviconLoaded(object? sender, (string? PageUrl, byte[] Png) icon) =>
+        _services.Favicons.Remember(icon.PageUrl, icon.Png);
+
     private void OnBrowserNavigationStarted(object? sender, EventArgs e)
     {
         // A new page is loading, so an old error/crash message and old blocked popups no longer apply.
@@ -732,6 +737,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.StateChanged -= OnBrowserStateChanged;
         _browser.NavigationStarted -= OnBrowserNavigationStarted;
         _browser.PageLoaded -= OnBrowserPageLoaded;
+        _browser.FaviconLoaded -= OnBrowserFaviconLoaded;
         _browser.ProblemOccurred -= OnBrowserProblemOccurred;
         _browser.PopupRequested -= OnBrowserPopupRequested;
         _browser.PopupBlocked -= OnBrowserPopupBlocked;

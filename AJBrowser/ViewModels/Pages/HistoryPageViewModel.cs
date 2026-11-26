@@ -11,9 +11,12 @@ using CommunityToolkit.Mvvm.Input;
 namespace AJBrowser.ViewModels.Pages;
 
 /// <summary>One history row on the page.</summary>
-public sealed class HistoryItemViewModel(HistoryEntry entry)
+public sealed class HistoryItemViewModel(HistoryEntry entry, System.Windows.Media.ImageSource? icon)
 {
     public HistoryEntry Entry { get; } = entry;
+
+    /// <summary>The site's icon, or null (then a globe is shown).</summary>
+    public System.Windows.Media.ImageSource? Icon { get; } = icon;
 
     public string Title => string.IsNullOrWhiteSpace(Entry.Title) ? UrlDisplay.ForAddressBar(Entry.Url) : Entry.Title;
 
@@ -45,6 +48,7 @@ public sealed partial class HistoryPageViewModel : ObservableObject, IInternalPa
     private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
 
     private readonly HistoryService _history;
+    private readonly FaviconService _favicons;
     private readonly BrowserEnvironment _browser;
     private readonly IPageHost _host;
     private readonly AppLogger _log;
@@ -52,9 +56,10 @@ public sealed partial class HistoryPageViewModel : ObservableObject, IInternalPa
     private int _loadedCount;
     private int _loadVersion;
 
-    public HistoryPageViewModel(HistoryService history, BrowserEnvironment browser, IPageHost host, AppLogger log)
+    public HistoryPageViewModel(HistoryService history, FaviconService favicons, BrowserEnvironment browser, IPageHost host, AppLogger log)
     {
         _history = history;
+        _favicons = favicons;
         _browser = browser;
         _host = host;
         _log = log;
@@ -224,7 +229,7 @@ public sealed partial class HistoryPageViewModel : ObservableObject, IInternalPa
                     Groups.Add(group);
                 }
 
-                group.Items.Add(new HistoryItemViewModel(entry));
+                group.Items.Add(new HistoryItemViewModel(entry, _favicons.Get(entry.Url)));
             }
 
             _loadedCount += page.Count;

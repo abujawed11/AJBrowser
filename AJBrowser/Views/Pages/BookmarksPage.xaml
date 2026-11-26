@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:AJBrowser.ViewModels.Pages"
+             xmlns:controls="clr-namespace:AJBrowser.Views.Controls"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:BookmarksPageViewModel, IsDesignTimeCreatable=False}"
              d:DesignWidth="1000" d:DesignHeight="700"
@@ -66,9 +67,7 @@
                             <DockPanel Background="Transparent"
                                        MouseLeftButtonDown="Row_MouseLeftButtonDown"
                                        MouseUp="Row_MouseUp">
-                                <TextBlock DockPanel.Dock="Left" Text="{Binding Glyph}" FontFamily="{StaticResource IconFontFamily}"
-                                           FontSize="16" VerticalAlignment="Center" Margin="4,0,12,0"
-                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <controls:SiteIcon DockPanel.Dock="Left" Source="{Binding Icon}" Glyph="{Binding Glyph}" Margin="4,0,12,0" />
                                 <StackPanel>
                                     <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{Binding Detail}" TextTrimming="CharacterEllipsis"

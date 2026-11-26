@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:AJBrowser.ViewModels"
+             xmlns:local="clr-namespace:AJBrowser.Views.Controls"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:TabViewModel, IsDesignTimeCreatable=False}"
              d:DesignWidth="600">
@@ -115,10 +116,8 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:SuggestionItem}">
                             <DockPanel>
-                                <TextBlock DockPanel.Dock="Left" Text="{Binding Glyph}"
-                                           FontFamily="{StaticResource IconFontFamily}" FontSize="14"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                           VerticalAlignment="Center" Margin="0,0,12,0" />
+                                <!-- The site's icon; without one, a star for bookmarks or a clock for history. -->
+                                <local:SiteIcon DockPanel.Dock="Left" Source="{Binding Icon}" Glyph="{Binding Glyph}" Margin="0,0,12,0" />
                                 <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
                                     <Run Text="{Binding DisplayTitle, Mode=OneWay}" />
                                     <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}" />

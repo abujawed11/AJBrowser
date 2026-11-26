@@ -45,6 +45,7 @@ public partial class App : Application
                 _services.Shell,
                 _services.Extensions,
                 _services.Bookmarks,
+                _services.Favicons,
                 _services.Session,
                 _services.CreateTab,
                 _services.CreateLogger(nameof(MainWindowViewModel)));
@@ -65,7 +66,7 @@ public partial class App : Application
             }
 
             // Bookmarks (for the bar and the star) load in the background while the tabs open.
-            var bookmarksLoaded = _services.Bookmarks.LoadAsync();
+            var bookmarksLoaded = Task.WhenAll(_services.Favicons.LoadAsync(), _services.Bookmarks.LoadAsync());
 
             // The saved session (if "Continue where you left off" is on), then URLs or files from the command line;
             // otherwise one tab with the home page. Starting tabs never throws: problems show in each tab's page area.

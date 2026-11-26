@@ -16,9 +16,12 @@ using CommunityToolkit.Mvvm.Input;
 namespace AJBrowser.ViewModels;
 
 /// <summary>A bookmark or folder on the bookmarks bar (folders carry their contents for the drop-down menu).</summary>
-public sealed class BookmarkNodeViewModel(Bookmark bookmark, IReadOnlyList<BookmarkNodeViewModel> children)
+public sealed class BookmarkNodeViewModel(Bookmark bookmark, IReadOnlyList<BookmarkNodeViewModel> children, System.Windows.Media.ImageSource? icon = null)
 {
     public Bookmark Bookmark { get; } = bookmark;
+
+    /// <summary>The site's icon (null for folders and unknown sites: then the glyph is shown).</summary>
+    public System.Windows.Media.ImageSource? Icon { get; } = icon;
 
     public string Title => Bookmark.Title;
 
@@ -40,6 +43,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly SettingsStore _settings;
     private readonly ShellService _shell;
     private readonly BookmarkService _bookmarks;
+    private readonly FaviconService _favicons;
     private readonly SessionService _session;
     private readonly Func<TabViewModel> _createTab;
     private readonly AppLogger _log;
@@ -51,6 +55,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         ShellService shell,
         ExtensionManager adBlocker,
         BookmarkService bookmarks,
+        FaviconService favicons,
         SessionService session,
         Func<TabViewModel> createTab,
         AppLogger log)
@@ -58,6 +63,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _settings = settings;
         _shell = shell;
         _bookmarks = bookmarks;
+        _favicons = favicons;
         _session = session;
         _createTab = createTab;
         _log = log;
@@ -66,6 +72,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _settings.Changed += OnSettingsChanged;
         _bookmarks.Changed += OnBookmarksChanged;
+        _favicons.Changed += OnBookmarksChanged; // a new site icon may belong on the bar
         Tabs.CollectionChanged += OnTabsCollectionChanged;
     }
 
@@ -315,7 +322,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private void OnBookmarksChanged(object? sender, EventArgs e)
     {
         BookmarkNodeViewModel Build(Bookmark b) =>
-            new(b, b.IsFolder ? _bookmarks.ChildrenOf(b.Id).Select(Build).ToList() : []);
+            new(b, b.IsFolder ? _bookmarks.ChildrenOf(b.Id).Select(Build).ToList() : [], _favicons.Get(b.Url));
 
         BookmarksBarItems.Clear();
         foreach (var bookmark in _bookmarks.ChildrenOf(null))
@@ -467,6 +474,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _settings.Changed -= OnSettingsChanged;
         _bookmarks.Changed -= OnBookmarksChanged;
+        _favicons.Changed -= OnBookmarksChanged;
         Tabs.CollectionChanged -= OnTabsCollectionChanged;
         AdBlock.Dispose();
         foreach (var tab in Tabs)

@@ -7,7 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AJBrowser.ViewModels;
 
 /// <summary>One row in the address-bar dropdown.</summary>
-public sealed record SuggestionItem(string Url, string Title, bool IsBookmark)
+public sealed record SuggestionItem(string Url, string Title, bool IsBookmark, System.Windows.Media.ImageSource? Icon)
 {
     public string DisplayUrl => UrlDisplay.ForAddressBar(Url);
 
@@ -28,13 +28,15 @@ public sealed partial class SuggestionsViewModel : ObservableObject, IDisposable
 
     private readonly HistoryService _history;
     private readonly BookmarkService _bookmarks;
+    private readonly FaviconService _favicons;
     private readonly AppLogger _log;
     private CancellationTokenSource? _pending;
 
-    public SuggestionsViewModel(HistoryService history, BookmarkService bookmarks, AppLogger log)
+    public SuggestionsViewModel(HistoryService history, BookmarkService bookmarks, FaviconService favicons, AppLogger log)
     {
         _history = history;
         _bookmarks = bookmarks;
+        _favicons = favicons;
         _log = log;
     }
 
@@ -80,7 +82,7 @@ public sealed partial class SuggestionsViewModel : ObservableObject, IDisposable
             Items.Clear();
             foreach (var suggestion in ranked)
             {
-                Items.Add(new SuggestionItem(suggestion.Url, suggestion.Title, suggestion.IsBookmark));
+                Items.Add(new SuggestionItem(suggestion.Url, suggestion.Title, suggestion.IsBookmark, _favicons.Get(suggestion.Url)));
             }
 
             SelectedIndex = -1;

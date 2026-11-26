@@ -8,9 +8,12 @@ using CommunityToolkit.Mvvm.Input;
 namespace AJBrowser.ViewModels.Pages;
 
 /// <summary>One row on the Bookmarks page: a bookmark or a folder.</summary>
-public sealed class BookmarkItemViewModel(Bookmark bookmark, string? folderPath = null)
+public sealed class BookmarkItemViewModel(Bookmark bookmark, System.Windows.Media.ImageSource? icon, string? folderPath = null)
 {
     public Bookmark Bookmark { get; } = bookmark;
+
+    /// <summary>The site's icon (null for folders and unknown sites: then the glyph is shown).</summary>
+    public System.Windows.Media.ImageSource? Icon { get; } = icon;
 
     public bool IsFolder => Bookmark.IsFolder;
 
@@ -29,11 +32,13 @@ public sealed class BookmarkItemViewModel(Bookmark bookmark, string? folderPath 
 public sealed partial class BookmarksPageViewModel : ObservableObject, IInternalPage
 {
     private readonly BookmarkService _bookmarks;
+    private readonly FaviconService _favicons;
     private readonly IPageHost _host;
 
-    public BookmarksPageViewModel(BookmarkService bookmarks, IPageHost host)
+    public BookmarksPageViewModel(BookmarkService bookmarks, FaviconService favicons, IPageHost host)
     {
         _bookmarks = bookmarks;
+        _favicons = favicons;
         _host = host;
         _bookmarks.Changed += OnBookmarksChanged;
         Refresh();
@@ -220,7 +225,7 @@ public sealed partial class BookmarksPageViewModel : ObservableObject, IInternal
                                      || (b.Url?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false))
                          .OrderBy(b => b.Title, StringComparer.CurrentCultureIgnoreCase))
             {
-                Items.Add(new BookmarkItemViewModel(bookmark, _bookmarks.FolderName(bookmark.ParentId)));
+                Items.Add(new BookmarkItemViewModel(bookmark, _favicons.Get(bookmark.Url), _bookmarks.FolderName(bookmark.ParentId)));
             }
 
             FolderPath = $"Search results for “{text}”";
@@ -230,7 +235,7 @@ public sealed partial class BookmarksPageViewModel : ObservableObject, IInternal
         {
             foreach (var bookmark in _bookmarks.ChildrenOf(CurrentFolderId))
             {
-                Items.Add(new BookmarkItemViewModel(bookmark));
+                Items.Add(new BookmarkItemViewModel(bookmark, _favicons.Get(bookmark.Url)));
             }
 
             FolderPath = _bookmarks.FolderName(CurrentFolderId);

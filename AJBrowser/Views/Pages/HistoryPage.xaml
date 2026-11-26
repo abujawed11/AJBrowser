@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:AJBrowser.ViewModels.Pages"
+             xmlns:controls="clr-namespace:AJBrowser.Views.Controls"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:HistoryPageViewModel, IsDesignTimeCreatable=False}"
              d:DesignWidth="900" d:DesignHeight="700"
@@ -84,8 +85,7 @@
                                                             ToolTip="Remove from history" AutomationProperties.Name="Remove from history" />
                                                     <TextBlock DockPanel.Dock="Left" Text="{Binding Time}" Width="64" VerticalAlignment="Center"
                                                                Style="{StaticResource SecondaryTextStyle}" />
-                                                    <TextBlock DockPanel.Dock="Left" Text="&#xE774;" FontFamily="{StaticResource IconFontFamily}"
-                                                               VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                    <controls:SiteIcon DockPanel.Dock="Left" Source="{Binding Icon}" Margin="0,0,10,0" />
                                                     <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
                                                         <Run Text="{Binding Title, Mode=OneWay}" />
                                                         <Run Text="  " />

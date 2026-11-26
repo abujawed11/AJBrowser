@@ -89,6 +89,9 @@ public sealed class BrowserTab : IDisposable
     /// </summary>
     public event EventHandler<string>? PageLoaded;
 
+    /// <summary>The page's icon arrived: the page URL it belongs to and the icon as PNG (to remember it for lists).</summary>
+    public event EventHandler<(string? PageUrl, byte[] Png)>? FaviconLoaded;
+
     /// <summary>Something the user must see instead of the page (error, crash, engine failure).</summary>
     public event EventHandler<PageProblem>? ProblemOccurred;
 
@@ -447,13 +450,22 @@ public sealed class BrowserTab : IDisposable
         var core = (CoreWebView2)sender!;
         var version = ++_faviconVersion;
         ImageSource? icon = null;
+        byte[]? png = null;
+        string? pageUrl = null;
 
         try
         {
             if (!string.IsNullOrEmpty(core.FaviconUri))
             {
+                pageUrl = core.Source;
                 using var stream = await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
-                icon = stream is null ? null : LoadImage(stream);
+                if (stream is not null)
+                {
+                    using var buffer = new MemoryStream();
+                    await stream.CopyToAsync(buffer);
+                    png = buffer.ToArray();
+                    icon = FaviconService.Decode(png);
+                }
             }
         }
         catch (Exception ex)
@@ -469,6 +481,11 @@ public sealed class BrowserTab : IDisposable
 
         Favicon = icon;
         StateChanged?.Invoke(this, EventArgs.Empty);
+
+        if (png is not null && icon is not null)
+        {
+            FaviconLoaded?.Invoke(this, (pageUrl, png));
+        }
     }
 
     private void OnContainsFullScreenElementChanged(object? sender, object e)
@@ -617,20 +634,4 @@ public sealed class BrowserTab : IDisposable
             _ => CoreWebView2PreferredColorScheme.Auto, // follows Windows, same as our System theme
         };
 
-    /// <summary>Decodes a favicon into a frozen (thread-safe, immutable) image small enough for a tab.</summary>
-    private static BitmapImage LoadImage(Stream source)
-    {
-        var buffer = new MemoryStream();
-        source.CopyTo(buffer);
-        buffer.Position = 0;
-
-        var image = new BitmapImage();
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.DecodePixelWidth = 32;
-        image.StreamSource = buffer;
-        image.EndInit();
-        image.Freeze();
-        return image;
-    }
 }

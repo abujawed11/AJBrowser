@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **282 passing tests**.
+   - Test Explorer: expect **291 passing tests**.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** is the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -83,6 +83,7 @@ AJBrowser/                   WPF app (net10.0-windows)
   Services/HistoryService.cs record visits/titles (queued background writes), search, delete, clear range
   Services/BookmarkService.cs all bookmarks in memory + write-through to SQLite, folder choices, Changed event
   Services/SessionService.cs debounced (1 s) session saves + final synchronous save at exit
+  Services/FaviconService.cs site icons per host (in memory + SQLite) for History, Bookmarks, bar, suggestions
   ViewModels/MainWindowViewModel.cs   tab list, selected tab, close/reopen, popups → tabs, fullscreen, theme (via settings),
                              startup/session restore, bookmarks bar, internal pages, session snapshot
   ViewModels/TabViewModel.cs address bar, title, favicon, loading, back/forward, zoom, find, blocked popups, problem panel,
@@ -94,7 +95,8 @@ AJBrowser/                   WPF app (net10.0-windows)
   ViewModels/Pages/          History/Bookmarks/SettingsPageViewModel (ajbrowser:// pages)
   Views/MainWindow.xaml(.cs) tab strip, toolbar, ⋯ menu, bookmarks bar, find bar, one host per tab (web or internal page),
                              problem panel; code-behind: keyboard shortcuts, fullscreen, menus, bookmarks-bar clicks
-  Views/Controls/            AddressBar (star + edit panel, suggestions drop-down), TabStrip (+ ShrinkingTabPanel), FindBar
+  Views/Controls/            AddressBar (star + edit panel, suggestions drop-down), TabStrip (+ ShrinkingTabPanel), FindBar,
+                             SiteIcon (favicon or fallback glyph)
   Views/Pages/               HistoryPage, BookmarksPage, SettingsPage (WPF views shown in a tab)
   Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle,
                              SwitchToggleStyle), Pages.xaml (internal page styles)
@@ -108,10 +110,10 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Navigation/                UrlOrSearchResolver (search template changeable), UrlDisplay, ZoomLevels, FindStatus,
                              CommandLineUrls, InternalPages (ajbrowser://), HistoryRules, SuggestionRanker
   Persistence/               Database (WAL, migrations via user_version, corrupt-file recovery), Migrations (v1),
-                             History/Bookmark/SessionRepository (async, SQL off the UI thread)
+                             History/Bookmark/Session/FaviconRepository (async, SQL off the UI thread); schema v2
   Settings/                  AppSettings (record, defaults, Normalize), SettingsStore (settings.json), SearchEngines
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings (282 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons (291 tests)
 ```
 
 **Packages:**
@@ -128,7 +130,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 1 Single-tab browser | 🔶 Built | Agent: build, 113 tests, launch + home page load. **You:** the manual checks in §6. |
 | 2 Tabs | 🔶 Built | Agent: build, 166 tests, launch with 2 startup tabs + script popup blocked. **You:** the manual checks in §6. |
 | 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, launches (installs on first start, reused on the next, off/on choice kept), toolbar shield + switch driven via UI Automation. **You:** ad blocking confirmed working; remaining checks in §6. |
-| 3 Bookmarks, history, settings | 🔶 Built | Agent: build, 282 tests, app driven via UI Automation (star, history, bookmarks, settings, suggestions, session restore of 4 tabs, clear history). **You:** the checks in §6. |
+| 3 Bookmarks, history, settings | 🔶 Built | Agent: build, 291 tests, site icons in lists, app driven via UI Automation (star, history, bookmarks, settings, suggestions, session restore of 4 tabs, clear history). **You:** the checks in §6. |
 | 4 Download manager | ⏭ **Next** | After your Phase 3 checks |
 | 5–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
 
@@ -162,6 +164,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 8. **Session restore:** Settings → "Continue where you left off". Open 3–4 tabs (one of them History), close the window with ✕, start again → the same tabs come back, the active one loads, the others load when you click them.
 9. **Restart keeps everything:** bookmarks, history and settings are still there after a restart.
 10. Check the new pages in the Light theme too.
+11. **Site icons:** visit a few sites, then open History, Bookmarks, the bookmarks bar and the address-bar suggestions → each shows the site's own icon (sites visited before this update show a globe until you visit them again). With History and Bookmarks open in two tabs, switching between them shows the right page each time.
 
 Known Phase 3 limits: bookmarks can't be reordered by dragging yet; closing the *last* tab closes the window and saves an empty session; history shows each page once, on the day of its latest visit; instantly-sent keystrokes right after Ctrl+T can lose their first characters (normal typing is fine).
 

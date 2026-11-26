@@ -38,5 +38,6 @@ public sealed record TabServices(
     Func<Uri> HomePage,
     HistoryService History,
     BookmarkService Bookmarks,
+    FaviconService Favicons,
     Func<InternalPage, IPageHost, IInternalPage> CreatePage,
     AppLogger Log);

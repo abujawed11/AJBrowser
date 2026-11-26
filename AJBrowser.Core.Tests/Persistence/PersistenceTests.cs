@@ -68,6 +68,27 @@ public sealed class MigrationTests : DatabaseTestBase
     }
 
     [Fact]
+    public void A_v1_database_upgrades_and_keeps_its_data()
+    {
+        var db = new Database(DbFile);
+        using (var connection = db.Open())
+        {
+            Migrations.Apply(connection, Migrations.Scripts[..1]); // what the first Phase 3 build created
+            using var insert = connection.CreateCommand();
+            insert.CommandText = "INSERT INTO history (url, title, visited_at) VALUES ('https://a.example/', 'A', 1);";
+            insert.ExecuteNonQuery();
+        }
+
+        var result = db.Initialize();
+
+        Assert.Equal(Migrations.LatestVersion, result.SchemaVersion);
+        using var check = db.Open();
+        using var count = check.CreateCommand();
+        count.CommandText = "SELECT COUNT(*) FROM history; SELECT COUNT(*) FROM favicons;";
+        Assert.Equal(1L, count.ExecuteScalar());
+    }
+
+    [Fact]
     public void A_failing_migration_leaves_the_previous_version()
     {
         var db = new Database(DbFile);
@@ -267,6 +288,45 @@ public sealed class BookmarkRepositoryTests : DatabaseTestBase
         await bookmarks.DeleteAsync(folder.Id);
 
         Assert.Equal("Keep", Assert.Single(await bookmarks.GetAllAsync()).Title);
+    }
+}
+
+public sealed class FaviconRepositoryTests : DatabaseTestBase
+{
+    private static readonly DateTime T0 = new(2026, 11, 26, 10, 0, 0, DateTimeKind.Utc);
+
+    [Theory]
+    [InlineData("https://WWW.Google.com/search?q=x", "www.google.com")]
+    [InlineData("http://example.com:8080/a", "example.com")]
+    [InlineData("about:blank", null)]
+    [InlineData("ajbrowser://history", null)]
+    [InlineData("file:///C:/a.html", null)]
+    [InlineData(null, null)]
+    public void Key_is_the_lower_case_host_of_web_urls(string? url, string? expected) =>
+        Assert.Equal(expected, FaviconRepository.KeyFor(url));
+
+    [Fact]
+    public async Task Save_inserts_then_replaces()
+    {
+        var icons = new FaviconRepository(CreateInitialized());
+        await icons.SaveAsync("example.com", [1, 2, 3], T0);
+        await icons.SaveAsync("example.com", [4, 5], T0.AddMinutes(1));
+        await icons.SaveAsync("other.example", [9], T0);
+
+        var all = await icons.GetAllAsync();
+
+        Assert.Equal(2, all.Count);
+        Assert.Equal(new byte[] { 4, 5 }, all["example.com"]);
+    }
+
+    [Fact]
+    public async Task Empty_and_oversized_icons_are_ignored()
+    {
+        var icons = new FaviconRepository(CreateInitialized());
+        await icons.SaveAsync("a.example", [], T0);
+        await icons.SaveAsync("b.example", new byte[FaviconRepository.MaxIconBytes + 1], T0);
+
+        Assert.Empty(await icons.GetAllAsync());
     }
 }
 

@@ -34,16 +34,15 @@
             <pages:SettingsPage />
         </DataTemplate>
 
+        <!-- Icon of a bookmarks-bar menu item. x:Shared="False": each menu item gets its own copy (a visual can only have one parent). -->
+        <controls:SiteIcon x:Key="BookmarkMenuIcon" x:Shared="False" Source="{Binding Icon}" Glyph="{Binding Glyph}" />
+
         <!-- Items in a bookmarks-bar folder menu (nested folders become submenus). -->
         <Style x:Key="BookmarkMenuItemStyle" TargetType="MenuItem">
             <Setter Property="Header" Value="{Binding Title}" />
             <Setter Property="ToolTip" Value="{Binding ToolTip}" />
             <Setter Property="ItemsSource" Value="{Binding Children}" />
-            <Setter Property="Icon">
-                <Setter.Value>
-                    <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFontFamily}" FontSize="14" />
-                </Setter.Value>
-            </Setter>
+            <Setter Property="Icon" Value="{StaticResource BookmarkMenuIcon}" />
             <EventSetter Event="Click" Handler="BookmarkMenuItem_Click" />
         </Style>
     </Window.Resources>
@@ -336,9 +335,7 @@
                                     Click="BookmarkBarItem_Click"
                                     MouseUp="BookmarkBarItem_MouseUp">
                                 <StackPanel Orientation="Horizontal" Margin="8,0">
-                                    <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFontFamily}" FontSize="13"
-                                               VerticalAlignment="Center" Margin="0,0,6,0"
-                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <controls:SiteIcon Source="{Binding Icon}" Glyph="{Binding Glyph}" Margin="0,0,6,0" />
                                     <TextBlock Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="160" />
                                 </StackPanel>
                             </Button>
@@ -371,8 +368,14 @@
                         <Grid>
                             <ContentPresenter Content="{Binding BrowserView}"
                                               Visibility="{Binding IsPageShown, Converter={StaticResource BoolToVisibility}}" />
-                            <ContentPresenter Content="{Binding InternalPageContent}"
-                                              Visibility="{Binding IsInternalPageShown, Converter={StaticResource BoolToVisibility}}" />
+                            <!--
+                                Visibility is on a wrapper on purpose: a ContentPresenter takes its Content as its DataContext,
+                                so a binding on the presenter itself would look for IsInternalPageShown on the page view model
+                                (not the tab), fail, and leave every internal page visible on top of each other.
+                            -->
+                            <Border Visibility="{Binding IsInternalPageShown, Converter={StaticResource BoolToVisibility}}">
+                                <ContentPresenter Content="{Binding InternalPageContent}" />
+                            </Border>
                         </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>

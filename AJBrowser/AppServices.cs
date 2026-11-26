@@ -38,6 +38,7 @@ public sealed class AppServices : IDisposable
         AddressResolver = new UrlOrSearchResolver(SearchEngines.TemplateFor(settings.Current));
         History = new HistoryService(new HistoryRepository(database), CreateLogger(nameof(HistoryService)));
         Bookmarks = new BookmarkService(new BookmarkRepository(database), CreateLogger(nameof(BookmarkService)));
+        Favicons = new FaviconService(new FaviconRepository(database), CreateLogger(nameof(FaviconService)));
         Session = new SessionService(new SessionRepository(database), CreateLogger(nameof(SessionService)));
 
         _tabServices = new TabServices(
@@ -45,6 +46,7 @@ public sealed class AppServices : IDisposable
             () => Settings.Current.HomePageUri,
             History,
             Bookmarks,
+            Favicons,
             CreatePage,
             CreateLogger(nameof(TabViewModel)));
 
@@ -70,6 +72,9 @@ public sealed class AppServices : IDisposable
     public UrlOrSearchResolver AddressResolver { get; }
     public HistoryService History { get; }
     public BookmarkService Bookmarks { get; }
+
+    /// <summary>Site icons for History, Bookmarks, the bookmarks bar and suggestions.</summary>
+    public FaviconService Favicons { get; }
     public SessionService Session { get; }
 
     /// <summary>Set by App once the main window's view model exists (the Settings page shows the same switch).</summary>
@@ -121,8 +126,8 @@ public sealed class AppServices : IDisposable
     /// <summary>Creates the view model of an internal page for the tab that will show it.</summary>
     private IInternalPage CreatePage(InternalPage page, IPageHost host) => page switch
     {
-        InternalPage.History => new HistoryPageViewModel(History, Browser, host, CreateLogger("HistoryPage")),
-        InternalPage.Bookmarks => new BookmarksPageViewModel(Bookmarks, host),
+        InternalPage.History => new HistoryPageViewModel(History, Favicons, Browser, host, CreateLogger("HistoryPage")),
+        InternalPage.Bookmarks => new BookmarksPageViewModel(Bookmarks, Favicons, host),
         InternalPage.Settings => new SettingsPageViewModel(
             Settings,
             AdBlock ?? throw new InvalidOperationException("AdBlock must be set before pages are created."),
