@@ -55,6 +55,27 @@ public static class Migrations
             updated_at INTEGER NOT NULL              -- Unix time in milliseconds (UTC)
         );
         """,
+
+        // ---- v3 (Phase 4): downloads, browser- and app-managed, so the list and its states survive a restart.
+        """
+        CREATE TABLE downloads (
+            id             INTEGER PRIMARY KEY,
+            kind           TEXT    NOT NULL,         -- 'Browser' or 'App'
+            state          TEXT    NOT NULL,         -- DownloadState name
+            source_url     TEXT    NOT NULL,         -- the real address (for retry); never logged
+            page_url       TEXT    NULL,
+            file_path      TEXT    NOT NULL,
+            total_bytes    INTEGER NULL,
+            received_bytes INTEGER NOT NULL DEFAULT 0,
+            started_at     INTEGER NOT NULL,         -- Unix time in milliseconds (UTC)
+            completed_at   INTEGER NULL,
+            error          TEXT    NULL,
+            accepts_ranges INTEGER NOT NULL DEFAULT 0,
+            etag           TEXT    NULL,
+            last_modified  TEXT    NULL
+        );
+        CREATE INDEX ix_downloads_started_at ON downloads (started_at DESC);
+        """,
     ];
 
     /// <summary>The schema version this build of AJBrowser expects.</summary>

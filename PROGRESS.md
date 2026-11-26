@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Next: your Phase 3 checks, then Phase 4 (download manager)**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 in progress: checkpoint 4a ✅ (core download engine), next 4b**
 
 ---
 
@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **298 passing tests**.
+   - Test Explorer: expect **357 passing tests**.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** is the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -110,10 +110,12 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Navigation/                UrlOrSearchResolver (search template changeable), UrlDisplay, ZoomLevels, FindStatus,
                              CommandLineUrls, InternalPages (ajbrowser://), HistoryRules, SuggestionRanker
   Persistence/               Database (WAL, migrations via user_version, corrupt-file recovery), Migrations (v1),
-                             History/Bookmark/Session/FaviconRepository (async, SQL off the UI thread); schema v2
+                             History/Bookmark/Session/Favicon/DownloadRepository (async, SQL off the UI thread); schema v3
   Settings/                  AppSettings (record, defaults, Normalize), SettingsStore (settings.json), SearchEngines
+  Downloads/                 (Phase 4a) DownloadItem + state machine, FileNamer, TransferRateEstimator,
+                             HttpFileDownloader (.ajpart, resume, retry), DownloadManager (queue, pause/resume/cancel, saving)
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons (298 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads (357 tests)
 ```
 
 **Packages:**
@@ -131,7 +133,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 2 Tabs | 🔶 Built | Agent: build, 166 tests, launch with 2 startup tabs + script popup blocked. **You:** the manual checks in §6. |
 | 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, launches (installs on first start, reused on the next, off/on choice kept), toolbar shield + switch driven via UI Automation. **You:** ad blocking confirmed working; remaining checks in §6. |
 | 3 Bookmarks, history, settings | 🔶 Built | Agent: build, 298 tests, sharp site icons in lists and tabs, app driven via UI Automation (star, history, bookmarks, settings, suggestions, session restore of 4 tabs, clear history). **You:** the checks in §6. |
-| 4 Download manager | ⏭ **Next** | After your Phase 3 checks |
+| 4 Download manager | 🔶 **In progress** | Checkpoint **4a done** (Core: model, FileNamer, HttpFileDownloader with resume/retry, DownloadManager, `downloads` table v3; 357 tests). **Next 4b:** catch browser downloads + download button/flyout + Downloads page. **Then 4c:** tab close with active downloads, startup cleanup, settings, exit confirmation. See plan Phase 4 "Checkpoint 4a". |
 | 5–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
@@ -202,8 +204,8 @@ Report anything odd, and the agent will fix it before Phase 4.
 
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
-**Suggested prompt on the new PC:**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 4.
+**Suggested prompt (new session or new PC):**
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 4 with checkpoint 4b.
 
 ## 7. uBlock Origin Lite test (V5): done
 

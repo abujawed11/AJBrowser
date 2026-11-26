@@ -16,6 +16,9 @@ public abstract class DatabaseTestBase : IDisposable
 
     protected string DbFile { get; }
 
+    /// <summary>The per-test temp folder (deleted afterwards), for other files a test needs.</summary>
+    protected string Root => _root;
+
     protected Database CreateInitialized()
     {
         var db = new Database(DbFile);

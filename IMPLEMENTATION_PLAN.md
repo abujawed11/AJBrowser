@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2, 2.5 (ad blocking) and 3 (bookmarks, history, settings, session) implemented, awaiting your manual checks · next: Phase 4
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2, 2.5 (ad blocking) and 3 (bookmarks, history, settings, session) implemented, awaiting your manual checks · Phase 4 in progress: checkpoint **4a done** (core download engine), next **4b**
 
 ---
 
@@ -549,11 +549,11 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 **Depends on:** Phase 3 (persistence, settings). It also builds the `HttpFileDownloader` that Phase 5 uses.
 
 **Checklist**
-- [ ] `DownloadItem` model (Core): `Id`, `Kind` (Browser/App), `State` (Queued, Downloading, Paused, Completed, Failed, Cancelled, Interrupted), `SourcePageUrl`, `DisplayUrl` (redacted), `FilePath`, `TotalBytes?`, `ReceivedBytes`, `StartedAt`, `CompletedAt`, `Error`, `CanPause`, `CanResume`.
+- [x] *(4a)* `DownloadItem` model (Core): `Id`, `Kind` (Browser/App), `State` (Queued, Downloading, Paused, Completed, Failed, Cancelled, Interrupted), `SourcePageUrl`, `DisplayUrl` (redacted), `FilePath`, `TotalBytes?`, `ReceivedBytes`, `StartedAt`, `CompletedAt`, `Error`, `CanPause`, `CanResume`.
 - [ ] `DownloadInterceptor` (Browser): `DownloadStarting` → `Handled = true`. Compute the path via `FileNamer` and settings (ask-where-to-save shows `SaveFileDialog` using a deferral). Subscribe to `BytesReceivedChanged`, `StateChanged`, `EstimatedEndTimeChanged`.
-- [ ] `DownloadManager` (Core): owns all items, persists state changes, throttles progress (≈4/sec), computes speed (moving average) and ETA (when the total is known).
-- [ ] `HttpFileDownloader` (Core): streaming to `.ajpart`, a buffer of ≥ 81 KB, Range resume when supported (`Accept-Ranges`, `ETag`/`Last-Modified` validation via `If-Range`), retry with backoff on transient errors, cancellation, atomic rename. It has no UI dependency and is used for app-managed jobs.
-- [ ] Queue and concurrency: app-managed jobs use `SemaphoreSlim` (default 3, configurable). Browser downloads are not queued by us (the runtime controls them); document this.
+- [x] *(4a)* `DownloadManager` (Core): owns all items, persists state changes, throttles progress (≈4/sec), computes speed (moving average) and ETA (when the total is known). Also tracks browser downloads reported by the Browser layer (`AddBrowserDownloadAsync`, `UpdateBrowserDownload`; wired in 4b). Events are posted to the creating `SynchronizationContext` (the UI thread).
+- [x] *(4a)* `HttpFileDownloader` (Core): streaming to `.ajpart`, a buffer of ≥ 81 KB, Range resume when supported (`Accept-Ranges`, `ETag`/`Last-Modified` validation via `If-Range`), retry with backoff on transient errors, cancellation, atomic rename. It has no UI dependency and is used for app-managed jobs.
+- [x] *(4a)* Queue and concurrency: app-managed jobs run at most `MaxConcurrent` at a time (default 3, 1–10; a small scheduler instead of `SemaphoreSlim`, so the limit can change at runtime). Browser downloads are not queued by us (the runtime controls them); document this.
 - [ ] Download panel: a toolbar button with a progress ring badge, and a `Popup` flyout listing recent downloads (it renders above the WebView). "Show all" opens the Downloads page.
 - [ ] Downloads page: the full list, search, clear completed, per-item actions.
 - [ ] Actions: Open (`ShellExecute` via `Process.Start` with `UseShellExecute=true`), Show in folder (`explorer.exe /select,"path"` via `ArgumentList`), Copy link (redacted for signed URLs), Retry (browser: navigate to the original URL in a tab; app: restart the job), Cancel (deletes the partial file).
@@ -561,6 +561,8 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [ ] On startup: mark previously in-progress browser downloads as `Interrupted`, offer resume for app jobs, and clean orphaned `.ajpart` files older than N days (ask first).
 - [ ] Settings: default folder, always-ask, max concurrent app downloads.
 - [ ] Dangerous file types: rely on WebView2 SmartScreen for browser downloads. App downloads only fetch media types.
+
+**Checkpoint 4a (2026-11-26), done:** Core only, no UI change. `Downloads/DownloadItem` (model, `DownloadStateMachine`, `ResumeInfo`), `FileNamer` (sanitising, device names, path segments stripped, Content-Disposition incl. `filename*`, extension from content type, `name (1).ext` that also respects `.ajpart`, in-process reservations), `TransferRateEstimator` (5 s window), `HttpFileDownloader` (`.ajpart` + rename without overwriting, Range/If-Range resume, restart on 200/416/changed ETag, retries 1/2/4 s on network errors, timeouts, 408/429/5xx, stall timeout 30 s, fatal on 4xx and write errors, error messages never contain the URL), `DownloadManager`; `Persistence/DownloadRepository` + migration **v3** `downloads` table (`MarkStaleAsync`: browser downloads that were running → Interrupted, app downloads → Paused). 59 new tests (357 total, stable over 3 runs) incl. a fake HTTP server for resume, ignored range, changed file, dropped connection, 5xx back-off, 404, stall, cancel, no-overwrite. The app was launched once: database upgraded to v3, no errors. **Next: 4b** = `DownloadInterceptor`, toolbar download button + flyout, Downloads page, actions. **Then 4c** = tab close with active downloads (F5), startup cleanup of old `.ajpart` files, settings (max concurrent), app-exit confirmation.
 
 **Files:** `Core/Downloads/*`, `Browser/DownloadInterceptor.cs`, `ViewModels/DownloadsViewModel.cs`, `DownloadItemViewModel.cs`, `Views/Controls/DownloadPanel.xaml`, `Views/Pages/DownloadsPage.xaml`.
 **Packages:** none new.
