@@ -9,6 +9,10 @@ public sealed class TransferRateEstimator
 {
     private readonly Queue<(DateTime Time, long Bytes)> _samples = new();
 
+    // The newest sample, kept separately: Queue has no O(1) "last", and LINQ's Last() walks the whole queue, which
+    // added up with WebView2's frequent progress events (hundreds of samples in the window).
+    private (DateTime Time, long Bytes) _last;
+
     public TransferRateEstimator(TimeSpan? window = null) => Window = window ?? TimeSpan.FromSeconds(5);
 
     public TimeSpan Window { get; }
@@ -16,12 +20,13 @@ public sealed class TransferRateEstimator
     /// <summary>Adds a sample. Going backwards in bytes (a restart from zero) clears the history.</summary>
     public void Add(DateTime timeUtc, long bytesReceived)
     {
-        if (_samples.Count > 0 && bytesReceived < _samples.Last().Bytes)
+        if (_samples.Count > 0 && bytesReceived < _last.Bytes)
         {
             _samples.Clear();
         }
 
-        _samples.Enqueue((timeUtc, bytesReceived));
+        _last = (timeUtc, bytesReceived);
+        _samples.Enqueue(_last);
         while (_samples.Count > 2 && timeUtc - _samples.Peek().Time > Window)
         {
             _samples.Dequeue();
@@ -41,9 +46,8 @@ public sealed class TransferRateEstimator
             }
 
             var first = _samples.Peek();
-            var last = _samples.Last();
-            var seconds = (last.Time - first.Time).TotalSeconds;
-            return seconds < 0.25 ? null : Math.Max(0, (last.Bytes - first.Bytes) / seconds);
+            var seconds = (_last.Time - first.Time).TotalSeconds;
+            return seconds < 0.25 ? null : Math.Max(0, (_last.Bytes - first.Bytes) / seconds);
         }
     }
 
@@ -55,7 +59,7 @@ public sealed class TransferRateEstimator
             return null;
         }
 
-        var left = Math.Max(0, totalBytes.Value - _samples.Last().Bytes);
+        var left = Math.Max(0, totalBytes.Value - _last.Bytes);
         var seconds = left / rate;
         return seconds > TimeSpan.FromDays(30).TotalSeconds ? null : TimeSpan.FromSeconds(Math.Ceiling(seconds));
     }
