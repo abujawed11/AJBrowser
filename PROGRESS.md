@@ -174,6 +174,8 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 8. Check the flyout and page in the Light theme too, and with the window narrow.
 
 **Phase 4c checks:**
+Checks 9, 10 and 12 below (and Pause/Resume, check 2) were **run by the agent in the real app** via UI Automation on 2026-11-26 and passed (details in the plan, Checkpoint 4c). Still worth a quick look yourself with a real site and your mouse.
+
 9. **Download link that opens a new tab** (`target=_blank`, many "Download" buttons do this): the new tab disappears by itself and the download keeps going to the end in the flyout. (This used to freeze.)
 10. **Close the tab while downloading:** start a big download from a page, then close that tab (Ctrl+W) → the download continues; Pause/Resume still work. The log (⋯ → Open data folder → Logs) shows "Kept a closed tab's engine…" and later "Released a closed tab's engine…".
 11. **Retry** (on an Interrupted download after a restart): the extra tab closes itself and the download restarts.
