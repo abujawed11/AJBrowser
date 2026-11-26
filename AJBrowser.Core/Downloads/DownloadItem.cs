@@ -72,8 +72,11 @@ public sealed record DownloadItem
 
     public string FileName => Path.GetFileName(FilePath);
 
-    /// <summary>The address without query, fragment or user info (signed links carry secrets there).</summary>
-    public string DisplayUrl => Redactor.Url(SourceUrl);
+    /// <summary>
+    /// The address without query, fragment or user info (signed links carry secrets there). App downloads (detected
+    /// media) also hide tokens in the path (<see cref="Redactor.MediaUrl(string?)"/>, spike F12).
+    /// </summary>
+    public string DisplayUrl => Kind == DownloadKind.App ? Redactor.MediaUrl(SourceUrl) : Redactor.Url(SourceUrl);
 
     /// <summary>0–1, or null when the total size is unknown (show an indeterminate bar).</summary>
     public double? Fraction => TotalBytes is > 0 ? Math.Clamp((double)ReceivedBytes / TotalBytes.Value, 0, 1) : null;

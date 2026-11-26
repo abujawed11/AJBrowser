@@ -20,6 +20,7 @@ namespace AJBrowser;
 public sealed class AppServices : IDisposable
 {
     private readonly TabServices _tabServices;
+    private readonly FileNamer _namer;
 
     private AppServices(AppPaths paths, FileLogSink logSink, SettingsStore settings, ThemeService theme, ShellService shell, Database database, DatabaseOpenResult databaseResult)
     {
@@ -43,7 +44,7 @@ public sealed class AppServices : IDisposable
         Session = new SessionService(new SessionRepository(database), CreateLogger(nameof(SessionService)));
 
         // Downloads (Phase 4). Created on the UI thread, so the manager raises its events there.
-        var namer = new FileNamer();
+        var namer = _namer = new FileNamer();
         DownloadManager = new DownloadManager(
             new DownloadRepository(database),
             new HttpFileDownloader(new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
@@ -55,6 +56,8 @@ public sealed class AppServices : IDisposable
             DownloadManager, namer, settings, AskSavePath, () => KnownFolders.Downloads, CreateLogger(nameof(DownloadInterceptor)));
         Downloads = new DownloadsViewModel(DownloadManager, DownloadInterceptor, shell, settings, CreateLogger(nameof(DownloadsViewModel)));
 
+        MediaDownloads = new MediaDownloadService(DownloadManager, _namer, settings, CreateLogger(nameof(MediaDownloadService)));
+
         _tabServices = new TabServices(
             AddressResolver,
             () => Settings.Current.HomePageUri,
@@ -62,6 +65,7 @@ public sealed class AppServices : IDisposable
             Bookmarks,
             Favicons,
             CreatePage,
+            MediaDownloads,
             CreateLogger(nameof(TabViewModel)));
 
         Settings.Changed += OnSettingsChanged;
@@ -99,6 +103,9 @@ public sealed class AppServices : IDisposable
 
     /// <summary>The download list shown by the toolbar flyout and the Downloads page.</summary>
     public DownloadsViewModel Downloads { get; }
+
+    /// <summary>Downloads detected videos (Phase 5).</summary>
+    public MediaDownloadService MediaDownloads { get; }
 
     /// <summary>Set by App once the main window's view model exists (the Settings page shows the same switch).</summary>
     public AdBlockViewModel? AdBlock { get; set; }

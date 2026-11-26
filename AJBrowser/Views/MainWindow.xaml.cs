@@ -146,7 +146,7 @@ public partial class MainWindow : Window
                         return true;
 
                     // Esc stops loading, but text boxes (address bar, find bar) use Esc themselves.
-                    case Key.Escape when tab is { IsLoading: true } && Keyboard.FocusedElement is not TextBox && !AdBlockPopup.IsOpen && !DownloadsPopup.IsOpen:
+                    case Key.Escape when tab is { IsLoading: true } && Keyboard.FocusedElement is not TextBox && !AdBlockPopup.IsOpen && !DownloadsPopup.IsOpen && !VideosPopup.IsOpen:
                         tab.Stop();
                         return true;
                 }
@@ -518,6 +518,32 @@ public partial class MainWindow : Window
 
     /// <summary>The Settings link runs its command (opens a tab); also close the panel.</summary>
     private void AdBlockSettings_Click(object sender, RoutedEventArgs e) => AdBlockPopup.IsOpen = false;
+
+    // ---------------------------------------------------------------- videos popup (Phase 5)
+
+    private long _videosPopupClosedAt;
+
+    private void VideosButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (Environment.TickCount64 - _videosPopupClosedAt < 250)
+        {
+            return;
+        }
+
+        VideosPopup.IsOpen = true;
+    }
+
+    private void VideosPopup_Closed(object? sender, EventArgs e) => _videosPopupClosedAt = Environment.TickCount64;
+
+    private void VideosPopup_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            VideosPopup.IsOpen = false;
+            VideosButton.Focus();
+            e.Handled = true;
+        }
+    }
 
     // ---------------------------------------------------------------- downloads flyout
 

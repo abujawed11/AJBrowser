@@ -40,4 +40,5 @@ public sealed record TabServices(
     BookmarkService Bookmarks,
     FaviconService Favicons,
     Func<InternalPage, IPageHost, IInternalPage> CreatePage,
+    MediaDownloadService MediaDownloads,
     AppLogger Log);

@@ -54,6 +54,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.OpenInNewTabRequested += OnBrowserOpenInNewTabRequested;
         _browser.CloseRequested += OnBrowserCloseRequested;
         _browser.OnlyDownloaded += OnBrowserOnlyDownloaded;
+        _browser.MediaChanged += OnBrowserMediaChanged;
         _services.Bookmarks.Changed += OnBookmarksChanged;
         _services.Favicons.Changed += OnFaviconsChanged;
     }
@@ -118,7 +119,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
 
     /// <summary>The internal page shown instead of the web page, or null for a web page.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsInternal), nameof(IsPageShown), nameof(IsInternalPageShown), nameof(CanBookmark))]
+    [NotifyPropertyChangedFor(nameof(IsInternal), nameof(IsPageShown), nameof(IsInternalPageShown), nameof(CanBookmark), nameof(HasMedia))]
     public partial IInternalPage? InternalPageContent { get; set; }
 
     public bool IsInternal => InternalPageContent is not null;
@@ -742,6 +743,66 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
 
     private void OnBrowserOnlyDownloaded(object? sender, EventArgs e) => OnlyDownloaded?.Invoke(this, EventArgs.Empty);
 
+    // ---------------------------------------------------------------- detected videos (Phase 5)
+
+    /// <summary>Videos and streams on the current page, for the toolbar picker.</summary>
+    public ObservableCollection<DetectedMediaViewModel> Media { get; } = [];
+
+    /// <summary>The toolbar "Videos" button shows only on web pages where something was found.</summary>
+    public bool HasMedia => !IsInternal && Media.Count > 0;
+
+    public string MediaButtonToolTip => Media.Count == 1 ? "1 video detected on this page" : $"{Media.Count} videos detected on this page";
+
+    /// <summary>Keeps the rows (and their "added" state) stable while the list grows; drops what's gone.</summary>
+    private void OnBrowserMediaChanged(object? sender, EventArgs e)
+    {
+        var visible = _browser.Media.Visible;
+        var visibleIds = visible.Select(v => v.Id).ToHashSet();
+        for (var i = Media.Count - 1; i >= 0; i--)
+        {
+            if (!visibleIds.Contains(Media[i].Id))
+            {
+                Media.RemoveAt(i);
+            }
+        }
+
+        var byId = Media.ToDictionary(m => m.Id);
+        foreach (var item in visible)
+        {
+            if (byId.TryGetValue(item.Id, out var existing))
+            {
+                existing.Update(item);
+            }
+            else
+            {
+                Media.Add(new DetectedMediaViewModel(item, DownloadMediaAsync));
+            }
+        }
+
+        OnPropertyChanged(nameof(HasMedia));
+        OnPropertyChanged(nameof(MediaButtonToolTip));
+    }
+
+    private async Task DownloadMediaAsync(DetectedMediaViewModel row)
+    {
+        if (!row.CanDownload)
+        {
+            return;
+        }
+
+        row.IsStarting = true;
+        try
+        {
+            var page = Uri.TryCreate(_browser.Url, UriKind.Absolute, out var pageUri) ? pageUri : null;
+            var item = await _services.MediaDownloads.StartAsync(row.Media, Title, page, _browser.GetCookieHeaderAsync);
+            row.WasQueued = item is not null;
+        }
+        finally
+        {
+            row.IsStarting = false;
+        }
+    }
+
     private void SetAddress(string text)
     {
         _isSettingAddress = true;
@@ -767,6 +828,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.OpenInNewTabRequested -= OnBrowserOpenInNewTabRequested;
         _browser.CloseRequested -= OnBrowserCloseRequested;
         _browser.OnlyDownloaded -= OnBrowserOnlyDownloaded;
+        _browser.MediaChanged -= OnBrowserMediaChanged;
         _services.Bookmarks.Changed -= OnBookmarksChanged;
         _services.Favicons.Changed -= OnFaviconsChanged;
         Suggestions.Dispose();

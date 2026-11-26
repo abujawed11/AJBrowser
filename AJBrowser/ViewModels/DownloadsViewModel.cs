@@ -292,6 +292,12 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
         _byId[item.Id] = vm;
         Items.Insert(0, vm);
         RefreshSummary(listChanged: true);
+
+        // Browser downloads announce themselves through the interceptor; app downloads (detected videos) here.
+        if (item.Kind == DownloadKind.App)
+        {
+            DownloadStarted?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void OnItemRemoved(object? sender, long id)

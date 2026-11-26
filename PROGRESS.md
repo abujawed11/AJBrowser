@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built (key checks run by the agent in the real app) · Phase 5 in progress: 5a ✅ (core media detection), next 5b**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built (key checks run by the agent in the real app) · Phase 5 in progress: 5a ✅ 5b ✅ (checked in the real app), next 5c**
 
 ---
 
@@ -79,11 +79,14 @@ AJBrowser/                   WPF app (net10.0-windows)
   Browser/DownloadInterceptor.cs  (4b) DownloadStarting → Handled, file name/folder (or Save dialog), registers with
                              DownloadManager, forwards progress; pause/resume/cancel of live browser downloads;
                              (4c) knows which WebView owns which download and keeps closed tabs' WebViews (Park) until done
+  Browser/MediaSniffer.cs    (5b) per tab: watches responses (+ a Media request filter), hint script, TabMediaStore,
+                             throttled MediaChanged
   Browser/PopupRequest.cs    hands a new tab's WebView to WebView2 as a popup (deferral + NewWindow)
   Browser/PageProblem.cs     error/crash panel model + which navigation errors get a panel
   Services/ThemeService.cs   Fluent ThemeMode (WPF0001 suppressed here) + Light/Dark brush swap, follows Windows
   Services/ShellService.cs   open folder, open file, show file in folder (SHOpenFolderAndSelectItems), open URL, Notepad
   Services/KnownFolders.cs   the Windows Downloads folder (also when moved)
+  Services/MediaDownloadService.cs (5b) detected video → app download (name, folder, allowlisted headers + cookies)
   Services/HistoryService.cs record visits/titles (queued background writes), search, delete, clear range
   Services/BookmarkService.cs all bookmarks in memory + write-through to SQLite, folder choices, Changed event
   Services/SessionService.cs debounced (1 s) session saves + final synchronous save at exit
@@ -92,6 +95,7 @@ AJBrowser/                   WPF app (net10.0-windows)
                              startup/session restore, bookmarks bar, internal pages, session snapshot
   ViewModels/TabViewModel.cs address bar, title, favicon, loading, back/forward, zoom, find, blocked popups, problem panel,
                              internal page or web page, lazy engine start, history recording, star, suggestions
+  ViewModels/DetectedMediaViewModel.cs (5b) one row in the Videos picker
   ViewModels/DownloadsViewModel.cs    (4b) download list for button ring, flyout and page; routes actions
   ViewModels/DownloadItemViewModel.cs (4b) one download row (status text, progress, which buttons apply)
   ViewModels/AdBlockViewModel.cs      ad-block state shared by the shield and the Settings page
@@ -102,7 +106,8 @@ AJBrowser/                   WPF app (net10.0-windows)
   Views/MainWindow.xaml(.cs) no system title bar (WindowChrome; own caption buttons, snap-layout hook), tab strip, toolbar, ⋯ menu, bookmarks bar, find bar, one host per tab (web or internal page),
                              problem panel; code-behind: keyboard shortcuts, fullscreen, menus, bookmarks-bar clicks
   Views/Controls/            AddressBar (star + edit panel, suggestions drop-down), TabStrip (+ ShrinkingTabPanel), FindBar,
-                             SiteIcon (favicon or fallback glyph), DownloadPanel (downloads flyout), ProgressArc (button ring)
+                             SiteIcon (favicon or fallback glyph), DownloadPanel (downloads flyout), ProgressArc (button ring),
+                             VideoPicker (Videos on this page)
   Views/Pages/               HistoryPage, BookmarksPage, SettingsPage, DownloadsPage (WPF views shown in a tab)
   Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle,
                              SwitchToggleStyle), Pages.xaml (internal page styles)
@@ -145,7 +150,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, launches (installs on first start, reused on the next, off/on choice kept), toolbar shield + switch driven via UI Automation. **You:** ad blocking confirmed working; remaining checks in §6. |
 | 3 Bookmarks, history, settings | 🔶 Built | Agent: build, 298 tests, sharp site icons in lists and tabs, app driven via UI Automation (star, history, bookmarks, settings, suggestions, session restore of 4 tabs, clear history). **You:** the checks in §6. |
 | 4 Download manager | 🔶 Built | **4a** Core engine; **4b** interceptor, toolbar button + flyout, Downloads page, actions; **4c** downloads survive closing their tab (keep-alive verified in a standalone spike, F18), blank download tabs close themselves, exit question, old `.ajpart` cleanup, "Simultaneous video downloads" setting. 399 tests, build 0 warnings. The agent did **not** launch AJBrowser itself (it would write into your real data folder). **You:** the Phase 4 checks in §6. |
-| 5 Video detection | 🔶 **In progress** | **5a done** (Core: classifier, per-tab store, hint validation, RequestContext, Redactor.MediaUrl, file names; 472 tests). **Next 5b:** watch each tab's responses, hint script, "Videos detected" button + picker, download with headers/cookies. **Then 5c:** right-click "Download video", Settings switch, Save as…, expired links, real-app check. |
+| 5 Video detection | 🔶 **In progress** | **5a done** (Core detection logic, 472 tests). **5b done, checked by the agent in the real app** (a real &lt;video&gt; found with resolution/duration and downloaded byte-identical with Referer + cookie; big native file found by size; HLS page = one entry, no segment flood; list clears on a new page). **Next 5c:** right-click "Download video", Settings switch, Save as…, expired-link message, decide V14 (saved source URLs of video downloads). |
 | 6–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
@@ -165,7 +170,14 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: check Phase 4 (4b + 4c), then start Phase 5
+## 6. Next task: try Phase 5b, then continue with 5c
+
+**Phase 5b quick try** (the agent already ran it on test pages):
+1. Open a page with a plain video file, for example a site's own `.mp4` (many news or documentation sites, or `https://www.w3schools.com/html/html5_video.asp`) and let it play → a blue film icon with a number appears left of the address-bar indicators. Click it → "Videos on this page" with quality, size and length → **Download** → it appears in the downloads flyout and plays afterwards.
+2. YouTube and most big streaming sites use streams (HLS/DASH) or protected video: you'll see "Stream · HLS/DASH … Soon" or nothing. That's expected until Phases 6–7 (and DRM-protected video is never supported).
+3. Go to another page → the film icon disappears.
+
+## 6a. Phase 4 checks (4b + 4c)
 
 **Phase 4b checks** (F5, Debug). Not run by the agent, so this is the first real test. A good test file: any large public test download (for example a speed-test site's 100 MB file).
 1. **Download from a normal link** (same tab): Edge's own download bubble does **not** appear; instead AJBrowser's flyout opens under the ↓ button with the file, a progress bar and "x MB of y MB · speed · time left". The ↓ button shows a blue ring filling up while it runs. The file lands in your Downloads folder (or the folder from Settings) with its proper name; downloading it again gives `name (1).ext`.
@@ -241,7 +253,7 @@ Report anything odd, and the agent will fix it before Phase 4.
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 5 with checkpoint 5b.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 5 with checkpoint 5c.
 
 ## 7. uBlock Origin Lite test (V5): done
 

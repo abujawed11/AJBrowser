@@ -34,6 +34,7 @@ public sealed class BrowserTab : IDisposable
     private readonly DownloadInterceptor _downloads;
     private readonly ThemeService _theme;
     private readonly AppLogger _log;
+    private readonly MediaSniffer _media;
     private readonly Grid _host = new();
 
     private WebView2? _webView;
@@ -54,6 +55,8 @@ public sealed class BrowserTab : IDisposable
         _downloads = downloads;
         _theme = theme;
         _log = log;
+        _media = new MediaSniffer(log);
+        _media.Changed += OnMediaChanged;
         _theme.ThemeChanged += OnThemeChanged;
     }
 
@@ -79,6 +82,12 @@ public sealed class BrowserTab : IDisposable
 
     /// <summary>For <see cref="PopupRequest"/> only: the live CoreWebView2 to hand to WebView2 as a new window.</summary>
     internal CoreWebView2? Core => _core;
+
+    /// <summary>Videos and streams found on the current page (Phase 5).</summary>
+    public Core.Media.TabMediaStore Media => _media.Store;
+
+    /// <summary>The list in <see cref="Media"/> changed (at most every 500 ms; at once when a new page clears it).</summary>
+    public event EventHandler? MediaChanged;
 
     /// <summary>Raised when any of the state properties above changed.</summary>
     public event EventHandler? StateChanged;
@@ -227,8 +236,35 @@ public sealed class BrowserTab : IDisposable
 
         _disposed = true;
         _theme.ThemeChanged -= OnThemeChanged;
+        _media.Changed -= OnMediaChanged;
         DetachWebView(keepForDownloads: true);
+        _media.Dispose();
     }
+
+    /// <summary>
+    /// The Cookie header this tab's profile would send to <paramref name="url"/> right now ("a=1; b=2"), or null.
+    /// For downloading a detected video the way the page's player would (plan §6.2); never logged or stored.
+    /// </summary>
+    public async Task<string?> GetCookieHeaderAsync(Uri url)
+    {
+        if (_core is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var cookies = await _core.CookieManager.GetCookiesAsync(url.AbsoluteUri);
+            return cookies.Count == 0 ? null : string.Join("; ", cookies.Select(c => $"{c.Name}={c.Value}"));
+        }
+        catch (Exception ex)
+        {
+            _log.Debug($"Cookies unavailable: {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    private void OnMediaChanged(object? sender, EventArgs e) => MediaChanged?.Invoke(this, EventArgs.Empty);
 
     // ---------------------------------------------------------------- creating the WebView
 
@@ -341,6 +377,7 @@ public sealed class BrowserTab : IDisposable
         webView.ZoomFactorChanged += OnZoomFactorChanged;
         _downloads.Attach(core);
         core.DownloadStarting += OnDownloadStartingInTab; // after the interceptor's handler
+        _media.Attach(core);
 
         ZoomFactor = webView.ZoomFactor;
         UpdateState(core);
@@ -374,6 +411,7 @@ public sealed class BrowserTab : IDisposable
                 _core.Find.ActiveMatchIndexChanged -= OnFindResultsChanged;
                 _core.DownloadStarting -= OnDownloadStartingInTab;
                 _downloads.Detach(_core);
+                _media.Detach(_core);
             }
             catch (Exception ex)
             {

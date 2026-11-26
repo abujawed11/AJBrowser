@@ -1,0 +1,64 @@
+<UserControl x:Class="AJBrowser.Views.Controls.VideoPicker"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AJBrowser.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:TabViewModel, IsDesignTimeCreatable=False}"
+             d:DesignWidth="380">
+    <!--
+        "Videos on this page" (Phase 5). DataContext: the selected TabViewModel; rows are its Media list.
+        Whole video files have a Download button; streams (HLS/DASH) are listed as coming in a later version.
+    -->
+    <StackPanel>
+        <TextBlock Text="Videos on this page" FontSize="16" FontWeight="SemiBold" Margin="4,0,0,4" />
+        <TextBlock Text="Found while the page loaded or played. Quality and size show when the site reveals them."
+                   Margin="4,0,4,8" FontSize="{StaticResource CaptionFontSize}" Style="{StaticResource SecondaryTextStyle}" />
+
+        <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Media}" Focusable="False">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:DetectedMediaViewModel}">
+                        <Border Padding="6" CornerRadius="4" ToolTip="{Binding ToolTip}">
+                            <DockPanel>
+                                <Grid DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <Button Content="Download" Command="{Binding DownloadCommand}" MinWidth="88"
+                                            Style="{DynamicResource AccentButtonStyle}"
+                                            Visibility="{Binding CanDownload, Converter={StaticResource PageBoolToVisibility}}"
+                                            AutomationProperties.Name="Download video" />
+                                    <TextBlock Text="Soon" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               Visibility="{Binding IsStream, Converter={StaticResource PageBoolToVisibility}}" />
+                                </Grid>
+
+                                <TextBlock DockPanel.Dock="Left" FontFamily="{StaticResource IconFontFamily}" FontSize="20"
+                                           VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{DynamicResource TextSecondaryBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="&#xE714;" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Media.IsAudioOnly}" Value="True">
+                                                    <Setter Property="Text" Value="&#xE8D6;" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Details}" FontSize="{StaticResource CaptionFontSize}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="Added to downloads" FontSize="{StaticResource CaptionFontSize}"
+                                               Foreground="{DynamicResource SuccessBrush}"
+                                               Visibility="{Binding WasQueued, Converter={StaticResource PageBoolToVisibility}}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </StackPanel>
+</UserControl>
