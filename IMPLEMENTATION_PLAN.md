@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2, 2.5 (ad blocking) and 3 (bookmarks, history, settings, session) implemented, awaiting your manual checks · Phase 4 (download manager) **built** in checkpoints 4a, 4b, 4c, awaiting your manual checks; next **Phase 5**
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2, 2.5 (ad blocking) and 3 (bookmarks, history, settings, session) implemented, awaiting your manual checks · Phase 4 (download manager) **built** (4a–4c; key checks run by the agent in the real app) · Phase 5 in progress: checkpoint **5a done** (core media detection), next **5b**
 
 ---
 
@@ -583,19 +583,23 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 
 **Depends on:** Phase 4, plus the spike findings.
 
+**Checkpoints:** **5a** Core only (classifier, per-tab store with de-duplication and confirmation, hint validation, `RequestContext`, `Redactor.MediaUrl`, file names); **5b** Browser wiring and UI (`MediaSniffer`, hint script, "Videos detected" button and picker, download with headers and cookies); **5c** context-menu "Download video", Settings switch, "Save as…", expired-link message, check in the real app via automation.
+
 **Checklist**
 - [ ] `MediaSniffer` (Browser): subscribe to `WebResourceResponseReceived` per tab, extract metadata cheaply, and push to a `Channel<MediaObservation>`. Capture the `NavigationId` from `NavigationStarting`.
-- [ ] `MediaClassifier` (Core): content type first, extension as a fallback, segment exclusion rules (§6.2). Pure and tested. Use the real content types from spike F1 as test cases (`audio/mpegurl` manifests, untyped or `octet-stream` TS segments, DASH `.m4v`/`.m4a` segments served as `video/mp4`/`audio/mp4`, byte-range `main.mp4` behind an fMP4 HLS playlist).
-- [ ] `Redactor.MediaUrl` (Core): also shortens long or opaque path segments, because CDNs put tokens in the path (spike F12). Use it for every media URL in logs and history.
-- [ ] Deduplicate live-manifest refreshes (the same manifest is fetched every few seconds; spike F1).
-- [ ] `MediaDetectionService` (Core): per-`(TabId, NavigationId)` store, dedupe, confirmation logic, events (throttled). Clear on new document, dispose on tab close.
-- [ ] `RequestContext` (Core/Security): captures the **allowlisted** request headers from the observed request (`Referer`, `Origin`, `User-Agent`, `Accept-Language`). Cookies are fetched **at download start** from the tab's profile `CookieManager.GetCookiesAsync(mediaUrl)` (cookies the browser would send to that exact URL). Never copy `Authorization` from another origin; never persist the context.
+- [x] *(5a)* `MediaClassifier` (Core): content type first, extension as a fallback, segment exclusion rules (§6.2). Pure and tested. Use the real content types from spike F1 as test cases (`audio/mpegurl` manifests, untyped or `octet-stream` TS segments, DASH `.m4v`/`.m4a` segments served as `video/mp4`/`audio/mp4`, byte-range `main.mp4` behind an fMP4 HLS playlist).
+- [x] *(5a)* `Redactor.MediaUrl` (Core): also shortens long or opaque path segments, because CDNs put tokens in the path (spike F12). Use it for every media URL in logs and history.
+- [x] *(5a)* Deduplicate live-manifest refreshes (the same manifest is fetched every few seconds; spike F1).
+- [ ] `MediaDetectionService` (Core): per-`(TabId, NavigationId)` store, dedupe, confirmation logic, events (throttled). Clear on new document, dispose on tab close. *(5a: the per-tab store is `Core/Media/TabMediaStore` (dedupe, confirmation, reset on a new document, SPA flag, `Version` for throttled UI); one per tab and the throttled events come in 5b.)*
+- [x] *(5a)* `RequestContext` (Core/Security): captures the **allowlisted** request headers from the observed request (`Referer`, `Origin`, `User-Agent`, `Accept-Language`). Cookies are fetched **at download start** from the tab's profile `CookieManager.GetCookiesAsync(mediaUrl)` (cookies the browser would send to that exact URL). Never copy `Authorization` from another origin; never persist the context.
 - [ ] Optional hint script (`Scripts/video-hints.js`, injected with `AddScriptToExecuteOnDocumentCreatedAsync`): posts `{currentSrc, videoWidth, videoHeight, duration, isBlob}` for `<video>` elements on `loadedmetadata`. The host validates and treats it as untrusted.
 - [ ] UI: a toolbar "Videos detected (n)" button, visible only when n > 0. `Popup` picker: each item shows thumbnail-less info (page title, resolution or "Unknown quality", format, size or "Unknown size", source host), a Download button, and a "Save as…" option.
 - [ ] Download → `DownloadManager.EnqueueApp(job)` using `HttpFileDownloader` with the `RequestContext`. Suggested filename: page title + resolution + extension.
 - [ ] Expired URL handling: a `403`/`410` on start → "Link expired — replay the video and try again" (and re-detection auto-refreshes the URL).
 - [ ] Add "Download video" to the context menu when right-clicking a `<video>` with a non-blob `src`.
 - [ ] Settings toggle: enable/disable media detection.
+
+**Checkpoint 5a (2026-11-26), done:** Core only, no UI change. `Core/Media/MediaClassifier` (Direct / HLS / DASH / Segment / None from content type, then extension; segment rules for `.ts`/`.m4s`/`.aac`/`.vtt`, `video/mp2t`, `init*.mp4`, `seg-12`/`chunk_3`/`frag5` names; ignores non-200/206, non-http and non-media resource contexts; `TotalSize` from `Content-Range` total or `Content-Length`; `KeyOf` = scheme+host+path), `Core/Media/TabMediaStore` (one entry per file across range requests and token changes, keeps the newest URL and largest size; a direct file is **confirmed** only if a native player or a navigation loaded it (resource context Media/Document) and it's ≥ 1 MB, or the page's player reported it; files fetched by page script (Fetch/XHR) are treated as stream pieces, which covers spike F1's byte-range `main.mp4`; HLS/DASH are listed; `Reset` on a new document, `MarkSpaNavigation` flags later items; max 200 entries; hints only enrich existing entries), `VideoHint.TryParse` (strict JSON, 4 KB cap, `type: "ajb-video"`, http(s) only, blob flagged, dimensions/duration range-checked), `Core/Media/MediaFileNamer` ("Title 720p.mp4"), `Core/Security/RequestContext` (allowlist Referer/Origin/User-Agent/Accept-Language, no CR/LF, 2 KB cap, page origin as fallback Referer, Cookie only added by `ToHeaders` at download time), `Redactor.MediaUrl` (path segments of 40+ chars or 16+ with ≥2 digits and ≥2 letters → `[id]`, extension kept). 73 new tests (472 total). **Next: 5b.**
 
 **Files:** `Browser/MediaSniffer.cs`, `Browser/Scripts/video-hints.js`, `Core/Media/*`, `Core/Security/RequestContext.cs`, `ViewModels/MediaPickerViewModel.cs`, `Views/Controls/VideoPicker.xaml`.
 **Packages:** none new.
@@ -865,6 +869,8 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | 2026-11-26 | Phase 4c: closed tabs with downloads keep their WebView parked (about:blank, muted) until the downloads end, rather than asking before closing the tab | F18 shows it works; matches Chrome (closing a tab never stops its downloads). Asking happens only at app exit, where the engine really ends |
 | 2026-11-26 | Phase 4c: exit question only for browser downloads; app downloads pause silently and resume next start | Only browser downloads are lost on exit |
 | 2026-11-26 | Phase 4c: old `.ajpart` cleanup looks only at the top level of the download folders, files older than 7 days, and always asks | Never delete user files without asking; `.ajpart` is AJBrowser's own extension |
+| 2026-11-26 | Phase 5a: a direct media file counts as a complete video only when the browser's own player (or a navigation) loaded it and it's ≥ 1 MB, or the page's &lt;video&gt; reported it; script-fetched (Fetch/XHR) files never count by size alone | MSE players fetch stream pieces with fetch/XHR, and some pieces are byte ranges of one big MP4 (spike F1) that would otherwise show up as a fake 82 MB "video" |
+| 2026-11-26 | Phase 5a: HLS/DASH streams are listed in the picker already (labelled "supported soon" until Phases 6/7) | Shows the user something was found instead of an empty list, without a segment flood |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---
