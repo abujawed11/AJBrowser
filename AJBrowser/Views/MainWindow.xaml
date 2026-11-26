@@ -73,7 +73,8 @@
                             VerticalAlignment="Center"
                             ToolTip="Settings and more" AutomationProperties.Name="Settings and more">
                         <Button.ContextMenu>
-                            <ContextMenu>
+                            <!-- Reset the font: otherwise the menu inherits the button's icon font and letters show as squares. -->
+                            <ContextMenu FontFamily="{StaticResource UiFontFamily}" FontSize="{StaticResource BodyFontSize}">
                                 <MenuItem Header="Theme">
                                     <MenuItem Header="System" IsChecked="{Binding IsSystemTheme, Mode=OneWay}"
                                               Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.System}" />

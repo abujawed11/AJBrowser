@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ (optional item pending) · Phase 1 🔶 built, awaiting your manual checks · **Next: Phase 2**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phase 1 🔶 built, awaiting your manual checks · **Next: Phase 2, then Phase 2.5 (ad blocking)**
 
 ---
 
@@ -93,10 +93,11 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation (113
 | Phase | Status | Notes |
 |---|---|---|
 | 0 Foundation | ✅ Done | User verified and committed ("phase 0 done") |
-| 0.5 Feasibility spike | ✅ Done | Automated suite + manual cookie test done. **Optional/pending:** uBlock Origin Lite extension test (V5). |
+| 0.5 Feasibility spike | ✅ Done | Automated suite, cookie test and uBO Lite extension test (V5 → F15: blocks YouTube ads) done. Ad-block engine decided. |
 | 1 Single-tab browser | 🔶 Built | Agent: build, 113 tests, launch + home page load. **You:** the manual checks in §6. |
 | 2 Tabs | ⏭ **Next** (after your Phase 1 checks) | See plan "Phase 2" |
-| 3–10 | Not started | See plan |
+| 2.5 Ad blocking (uBO Lite) | Not started | New phase, decided 2026-11-26. See plan "Phase 2.5" |
+| 3–10 | Not started | Phase 8 is now the optional adblock-rust upgrade |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
 - Media responses expose content type, length and range, and manifest bodies are readable. But content types are unreliable, DASH segments look like `video/mp4`, and fMP4 HLS uses a byte-range `main.mp4`, so suppress anything a manifest references.
@@ -106,10 +107,12 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation (113
 - A navigation that becomes a download completes with `ConnectionAborted`. Don't show an error page for it (Phase 1).
 - New-window WebViews **don't inherit** per-WebView setup, so use one shared `BrowserTab` initialisation. WebView2 does **not** block script popups; `IsUserInitiated` distinguishes clicked popups from script popups (Phase 2).
 - `CookieManager` returns HttpOnly cookies (GitHub: 12 of 18).
+- **uBlock Origin Lite runs in WebView2 and blocks YouTube video ads** (Optimal mode). It's stored as an unpacked extension that references its original folder, and its rules only update with new extension versions (F15).
 - CDNs put tokens in URL **paths**, so a `Redactor.MediaUrl` is needed (Phase 5).
 
+**Decided:** ad blocking = uBlock Origin Lite via WebView2's extension API in Phase 2.5 (right after tabs); adblock-rust + scriptlets (Brave's approach) is an optional Phase 8 upgrade (plan §12).
+
 **Open decisions:**
-- **Ad-block engine** (plan §6.5 and §12). Options: uBO Lite extension, adblock-rust via a Rust shim (Rust isn't installed), or a C# engine. Decide before Phase 8, ideally after the extension test.
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
@@ -133,12 +136,9 @@ Report anything odd, and the agent will fix it before Phase 2.
 **Suggested prompt on the new PC:**
 > Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 2.
 
-## 7. Optional pending manual test: uBlock Origin Lite (V5)
+## 7. uBlock Origin Lite test (V5): done
 
-1. Download uBlock Origin Lite for **Chromium** (from its GitHub releases) and unzip it to a folder.
-2. F5, then open **Diagnostics**, click **Load unpacked…**, and pick the folder that contains `manifest.json`.
-3. Open an ad-heavy news site in the Diagnostics address bar. Click **Measure reload**, then **Toggle on/off**, then **Measure reload** again.
-4. Click **Save report** and give the report to Claude, which records it as finding F15 and helps decide the ad-block engine.
+Result in plan §11 F15. On the first PC the extension is registered in the Diagnostics profile from `D:\tools\uBOLite`; keep that folder, or click **Load unpacked…** again after moving it. On a new PC, load it again (download the `.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases).
 
 ## 8. Diagnostics tool quick reference (Debug builds)
 

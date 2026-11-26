@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done (optional uBO Lite extension test pending) · Phase 1 implemented, awaiting your manual checks
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phase 1 implemented, awaiting your manual checks · next: Phase 2, then the new Phase 2.5 (ad blocking with uBO Lite)
 
 ---
 
@@ -79,7 +79,7 @@ These are documented guesses. Change them here if any are wrong.
 | Logging framework | ❌ Not initially | A small in-house `ILogSink` that writes to a rolling file, with a **mandatory redaction helper**. Avoids Serilog/NLog until needed. |
 | Theme library | ⚖️ Decide in Phase 0 | Option A (recommended first): WPF's in-box **Fluent theme** (`Application.ThemeMode` = Light/Dark/System). It still carries the `[Experimental]` diagnostic **WPF0001** in .NET 9/10, so it must be suppressed. Option B: custom resource dictionaries only. Option C: WPF-UI (lepoco, MIT) if A proves too buggy. Our custom chrome (tabs, toolbar) uses our own semantic brush keys either way, so switching later is cheap. |
 | Icons | ✅ In-box | Segoe Fluent Icons (Windows 11) with a Segoe MDL2 Assets fallback (Windows 10). No icon package needed. |
-| Ad-block engine | ⚖️ Decide after the Phase 0.5 spike | See §6.5. Leading candidates: **adblock-rust** (Brave, MPL-2.0) through a small native C-ABI shim, or loading a maintained MV3 blocker extension through WebView2's extension API. Built-in **WebView2 tracking prevention** is a free baseline from Phase 1. |
+| Ad-block engine | ✅ Decided 2026-11-26 | **uBlock Origin Lite** (GPLv3, bundled unmodified) loaded through WebView2's extension API in Phase 2.5; it blocked YouTube ads in the spike (F15). **adblock-rust** (Brave, MPL-2.0) via a native shim stays the optional later upgrade (Phase 8). Built-in **WebView2 tracking prevention** remains the baseline. |
 | Public Suffix List | ⏳ Only if needed | Needed for "registrable domain" (eTLD+1) logic, such as per-site toggles and third-party checks. adblock-rust handles this internally. If we need it ourselves, use a maintained MIT library or bundle the PSL with periodic updates. |
 | Test framework | ✅ Add in Phase 0 | xUnit with `AJBrowser.Core.Tests`. Pure-logic tests only; UI/WebView2 behaviour is verified manually. |
 | Installer / updater | ⚖️ Decide in Phase 10 | Leading candidate: **Velopack** (MIT; installer, delta updates, GitHub Releases hosting). Alternatives: MSIX (virtualised AppData quirks, Store-friendly) or Inno Setup (no updater). |
@@ -331,7 +331,7 @@ Modern players use **Media Source Extensions (MSE)**: page JavaScript downloads 
 | **D. Our own C# ABP-syntax engine** | Medium at best (subset of syntax, no scriptlets) | Full | High and ongoing. Filter syntax is large and evolves. | Our choice |
 | ❌ "URL contains 'ad'" | Unacceptable | — | — | — |
 
-**Recommendation:** A from Phase 1 (free). In Phase 8 use **C (adblock-rust)** as the primary engine. If the spike shows that B works well and you'd rather avoid Rust, B with A is an acceptable lighter path, at the cost of integration. D is a fallback only.
+**Decision (2026-11-26, after F15):** A from Phase 1, **B (uBO Lite) in Phase 2.5**, and **C (adblock-rust + scriptlet injection) as an optional Phase 8 upgrade** if B's limits (no counter, rule updates only with releases, weak integration) start to matter. D is a fallback only.
 
 **Filter lists:** EasyList + EasyPrivacy (dual-licensed GPLv3 / CC BY-SA 3.0), optionally uBlock filters (GPLv3) and Peter Lowe's list. **Download at runtime** from the official URLs rather than bundling, which avoids redistributing them and keeps them fresh. Honour `! Expires:`, use ETag/If-Modified-Since, cache raw lists plus a **serialised compiled engine** for fast startup, and keep the last good copy on failure. Show list attribution in Settings → About.
 
@@ -398,11 +398,11 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [x] **Downloads:** `DownloadStarting` with `Handled` + custom path, pause/resume, and closing the WebView mid-download → §11 F5.
 - [x] **Blocking:** three-argument filter (all source kinds), test blocklist, timing and UI-lag on news sites → §11 F6, F7. *Optional manual check: tick "Intercept all requests" and scroll/type on a heavy site.*
 - [x] **Tracking prevention:** Balanced vs. Strict request counts → §11 F8.
-- [ ] **Extension path (manual, you):** download uBlock Origin Lite for Chromium (unpacked), click **Load unpacked…**, then compare **Measure reload** on an ad-heavy site with the extension on and off (**Toggle on/off**). Click **Save report**.
+- [x] **Extension path (manual, you):** loaded uBlock Origin Lite (unpacked) in the Diagnostics window and compared YouTube with the extension on and off → §11 F15. *Measure reload request counts were not recorded (optional).*
 - [x] **New windows:** `NewWindowRequested` + deferral + `args.NewWindow` keeps `window.opener` → §11 F10.
 - [ ] Optional: minimal adblock-rust C-ABI shim. **Blocked:** no Rust toolchain installed (`cargo` not found). Only needed if option C is chosen.
 - [x] Record findings in §11.
-- [ ] Make the ad-block engine decision in §12. **Waits on the extension test and your view on adding a Rust build step** (see §11 summary).
+- [x] Make the ad-block engine decision in §12: uBO Lite now (new Phase 2.5), adblock-rust later if needed.
 
 **Files:** `AJBrowser/Diagnostics/*` (DEBUG only) or a separate branch.
 **Packages:** none new (an optional Rust toolchain for the shim test).
@@ -476,6 +476,31 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 **Manual verification:** open 10 tabs and switch with the mouse and `Ctrl+Tab`. Close the middle tab → the correct neighbour becomes active. `Ctrl+Shift+T` restores it. Middle-click a link → new tab. "Sign in with Google" on a site → the popup works and closes itself. YouTube video fullscreen works. `Ctrl+L` while the page has focus focuses the address bar. Zoom in/out/reset.
 **Automated tests:** closed-tab stack logic and tab-selection-after-close logic (pure functions in Core or testable VM logic).
 **Done when:** daily multi-tab browsing feels normal, with no leaked WebView processes after closing tabs (check Task Manager).
+
+---
+
+### Phase 2.5 — Ad blocking with uBlock Origin Lite · **S–M**
+
+**Goal / outcome:** Ads (including YouTube video ads) are blocked in the normal browser by default, using the uBlock Origin Lite extension proven in the spike (F15), with a simple on/off control.
+
+**Scope:** load and manage the bundled extension; global on/off; licensing notice. **Excluded:** blocked-count badge, per-site toggles and background list updates (these come with the Phase 8 adblock-rust upgrade, if we do it).
+**Depends on:** Phase 2 (popups and all WebViews go through the shared `BrowserTab` setup). Decided 2026-11-26 (§12).
+
+**Checklist**
+- [ ] `BrowserEnvironment`: set `AreBrowserExtensionsEnabled = true` in the environment options (applies to every WebView in the user data folder).
+- [ ] Bundle the unpacked uBO Lite build in the app output (for example `Extensions/uBOLite/`), pinned to a version, with its `LICENSE` (GPLv3) and a source link. Add it to a third-party notices file.
+- [ ] Copy it from the install folder to `%LOCALAPPDATA%\AJBrowser\Extensions\uBOLite\<version>\` before installing, because WebView2 references the folder in place (F15) and the install folder may change on app updates.
+- [ ] `ExtensionManager` (Browser layer): on startup, `GetBrowserExtensionsAsync`; install with `AddBrowserExtensionAsync` if missing; when the bundled version is newer, remove the old one and install the new one. Log the outcome.
+- [ ] On/off: a toolbar shield or ⋯ menu item calling `extension.EnableAsync(bool)`; the state persists (in the profile now, in settings once Phase 3 exists).
+- [ ] Optional: a ⋯ menu item "Ad blocker settings" that opens `chrome-extension://<id>/dashboard.html` in the page area (filtering mode, per-site exceptions).
+- [ ] Failure handling: if extensions can't load (old runtime, policy), browsing continues without blocking and the log says why; tracking prevention stays on.
+
+**Files:** `Browser/BrowserEnvironment.cs`, `Browser/ExtensionManager.cs`, `AJBrowser.csproj` (content items), `Extensions/uBOLite/*`, `THIRD-PARTY-NOTICES.md`, toolbar/menu XAML.
+**Packages:** none (the extension is a bundled folder, GPLv3, shipped unmodified alongside the app).
+**Risks:** rules only update with new uBO Lite versions (F15), so plan to bump the bundled version in releases; YouTube may break blocking until uBO Lite updates; WebView2 extension support is newer than the rest of the API surface.
+**Manual verification:** fresh profile → F5 → the extension installs itself (log line). YouTube: no pre-roll ads on 3–4 videos. Turn blocking off → ads return; on → gone; restart → the choice is kept. A news site visibly loses ad slots.
+**Automated tests:** version comparison / "needs reinstall" decision as a pure function in Core.
+**Done when:** ads are blocked by default in the normal browser without any manual extension loading, and the user can turn it off.
 
 ---
 
@@ -615,11 +640,13 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 
 ---
 
-### Phase 8 — Ad and tracker blocking · **L**
+### Phase 8 — Ad-block upgrade: adblock-rust engine (optional) · **L**
 
-**Goal / outcome:** Ads and trackers are blocked by default, with a toolbar shield showing the blocked count, a per-site toggle, a global toggle, an allowlist, and automatically updated community filter lists.
+**Goal / outcome:** Replace or supplement the Phase 2.5 extension with Brave's engine: a toolbar shield showing the blocked count, a per-site toggle, a global toggle, an allowlist, automatically updated community filter lists, and **scriptlet injection** so YouTube-style ads stay blocked.
 
-**Depends on:** Phase 3 (site settings), the Phase 0.5 decision. Can run in parallel with Phases 5–7 if desired.
+**Do this only if** the Phase 2.5 extension's limits matter in practice (decision 2026-11-26).
+
+**Depends on:** Phase 2.5, Phase 3 (site settings). Can run in parallel with Phases 5–7 if desired.
 
 **Checklist (assuming the recommended adblock-rust path; adjust per §12)**
 - [ ] Native shim: `native/adblock-shim/` Rust crate exposing a C ABI (`engine_new_from_lists`, `engine_serialize/deserialize`, `engine_check(url, source_url, request_type) -> {matched, exception, redirect?}`, `engine_url_cosmetic_resources(url)`, `engine_hidden_class_id_selectors(classes, ids, exceptions)`, `free_*`). Prebuilt `adblock_shim.dll` (x64) committed via LFS or produced by a CI step. Document the build.
@@ -627,6 +654,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [ ] `FilterListUpdater` (Core): list catalogue (EasyList, EasyPrivacy, optional uBlock filters / Peter Lowe), conditional GET, `! Expires:` (default 4 days), background update on startup + timer, keep the last good copy, compile to a serialised engine file, hot-swap the engine atomically.
 - [ ] `RequestBlocker` (Browser): filter registration with source kinds (worker kinds on one WebView only). Map `CoreWebView2WebResourceContext` → engine request type. Decision → `CreateWebResourceResponse(null, 403?, "Blocked", "")` (or redirect resources later). **No allocations-heavy work in the handler.**
 - [ ] `BlockingPolicy` (Core): global toggle, per-site disable (by host, later eTLD+1), and an allowlist UI. The decision is cached per navigation.
+- [ ] Scriptlet injection: get the scriptlet code for each page from the engine (`url_cosmetic_resources` → injected script, with uBO's scriptlet resources loaded; GPLv3) and inject it before page scripts run (`AddScriptToExecuteOnDocumentCreatedAsync`, all frames). Solve the timing: scripts are registered ahead of navigation, not per URL. This is what removes YouTube ads.
 - [ ] Cosmetic filtering: on document creation and per frame, inject a domain-specific hide stylesheet. Generic class/id selector script with `MutationObserver`, using batched, debounced messages to the host. Validate messages (untrusted), cap sizes.
 - [ ] UI: shield button with a count (per tab, per navigation; the count is batched). The popup shows the count, a "Blocking on this site" toggle (reloads the page), a link to settings.
 - [ ] Settings page: global toggle, lists (enable/disable, last updated, update now), allowlist management, tracking prevention level (Balanced/Strict), list attributions.
@@ -733,7 +761,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 | V2 | Does `Response.GetContentAsync()` reliably return manifest bodies? | Spike | ☑ Yes, all of them (F2) |
 | V3 | Do browser downloads continue when their WebView/tab closes? | Spike | ☑ **No**: the operation freezes and events stop (F5) |
 | V4 | Is `WebResourceRequested` with `"*"` + All source kinds fast enough on heavy sites (UI thread)? | Spike | ☑ Yes (F6) |
-| V5 | Can an MV3 blocker (uBO Lite) run in WebView2 via `AddBrowserExtensionAsync`, and how well? | Spike | ☐ Manual test pending (tooling ready) |
+| V5 | Can an MV3 blocker (uBO Lite) run in WebView2 via `AddBrowserExtensionAsync`, and how well? | Spike | ☑ Yes; it blocked YouTube video ads in Optimal mode (F15) |
 | V6 | Does `NewWindowRequested` + `args.NewWindow` keep `window.opener` for OAuth popups? | Spike | ☑ Yes (F10) |
 | V13 | Does `CookieManager.GetCookiesAsync` return HttpOnly cookies for a signed-in site? | Spike | ☑ Yes (F13) |
 | V7 | Which keys does WebView2 consume vs. forward to WPF (`Ctrl+L`, `Ctrl+T`, `Ctrl+W`, `F5`, …)? Should we set `AreBrowserAcceleratorKeysEnabled`? | Phase 2 | ☐ |
@@ -766,9 +794,10 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | F11 | V12 controller options | `EnsureCoreWebView2Async(environment, controllerOptions)` with `ProfileName` works for both the main WebView and popups. | Phase 1 can use named profiles and InPrivate as designed. |
 | F12 | Logging privacy | CNN's live HLS URLs carry long tokens **in the path** (`/live/use1/d17_Cixj…`), which `Redactor.Url` keeps (it strips only query and fragment). | Phase 5: add `Redactor.MediaUrl` that shortens long or opaque path segments, and use it for all media URLs in logs and history. |
 | F13 | V13 cookies (manual, by you, 2026-11-26) | Signed in to GitHub inside the Diagnostics profile: `GetCookiesAsync("https://github.com/")` returned 18 cookies, **12 HttpOnly**, 18 Secure, 8 session cookies, 2 distinct domains. | App-managed downloads (Phase 5+) can send the same session cookies the browser would, including HttpOnly ones, so sign-in-protected media can work. Fetch them per exact URL at download start; never log or persist them. |
+| F15 | V5 extension (manual, by you, 2026-11-26) | `AddBrowserExtensionAsync` loaded **uBlock Origin Lite** (id `lelebihonlheieljmpcmfflcmlelhfob`) with `AreBrowserExtensionsEnabled = true`. Its dashboard opened at `chrome-extension://<id>/dashboard.html`; default filtering mode **Optimal**. **YouTube pre-roll ads were blocked with the extension on and appeared with it off.** The profile stores it as an *unpacked* extension (Chromium location 4) that **references the original folder** (`D:\tools\uBOLite`); WebView2 does not copy it, so the folder must stay in place. No extension toolbar button or popup exists in WebView2 (as documented). | Option B works, including YouTube, which network-only blocking (C without scriptlets, or D) would largely miss. Shipping it means: enable extensions in `BrowserEnvironment`, bundle the folder in the app directory (GPLv3 notice + source link), install on startup if missing, build our own on/off UI. **Rules only update with new extension versions** (MV3 static rulesets), so updates ride on AJBrowser releases. Our own blocked counter isn't available from the extension. |
 | F14 | Popup gesture flag (manual) | Clicking the **Open popup** button gave `IsUserInitiated = True`; the automated script-only popup gave `False` (F10). | The flag reliably separates user-clicked popups from script popups, so Phase 2's popup blocker can rely on it. |
 
-**Ad-block engine: summary so far.** Network interception performs well (F6, F7), so an engine running inside our app is viable (options C or D in §6.5). The extension route (option B) still needs the manual uBO Lite test (V5). Option C needs a Rust toolchain, which isn't installed yet.
+**Ad-block engine: summary so far.** Network interception performs well (F6, F7), so an engine running inside our app is viable (options C or D in §6.5). The extension route (option B) **works, including YouTube video ads** (F15), at little cost, but with weaker integration (no counter, own toggle UI needed) and rule updates tied to releases. Option C (adblock-rust, Brave's engine) gives full integration and background list updates; matching Brave on YouTube additionally needs **scriptlet injection** (adblock-rust supplies the scriptlet code; we inject it with `AddScriptToExecuteOnDocumentCreatedAsync`), plus a Rust toolchain, which isn't installed yet.
 
 ---
 
@@ -781,7 +810,7 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | 2026-11-26 | No EF Core, DI container or logging framework initially | Minimise dependencies; revisit if needed |
 | 2026-11-26 | FFmpeg as an external LGPL process, introduced in Phase 6 | Remux only; license-friendly; not needed for direct files |
 | 2026-11-26 | App-managed HLS/DASH segment download (not FFmpeg network input) | Keeps cookies in-process, precise progress, resumable |
-| _pending_ | Ad-block engine: adblock-rust shim vs. extension vs. other | Decide after Phase 0.5 |
+| 2026-11-26 | Ad blocking: ship **uBlock Origin Lite** via WebView2's extension API in a new **Phase 2.5** (right after tabs); **adblock-rust** + scriptlets becomes an optional Phase 8 upgrade | F15: uBO Lite blocked YouTube ads in WebView2 at little cost. Limits accepted for now: no blocked counter, rules update only with new extension versions, our own on/off UI needed. Brave's approach (C) is the path if those limits bite. |
 | 2026-11-26 | No `global.json` for now | Only the .NET 11 SDK is installed locally; it builds net10.0. Revisit when CI is added. |
 | 2026-11-26 | Theme: in-box Fluent `ThemeMode` + own semantic brush dictionaries (tentative) | No dependency; switch to custom-only or WPF-UI if the V9 visual check finds problems |
 | 2026-11-26 | Phase 1 defaults: Bing as home page and search engine (`BrowserDefaults`) | Placeholder until the search-engine and homepage settings in Phase 3 |
