@@ -44,6 +44,7 @@ public sealed class BrowserTab : IDisposable
     private Uri? _currentNavigationUri;
     private DateTime _lastAutoRecoveryUtc = DateTime.MinValue;
     private int _faviconVersion;
+    private bool _hasCommittedPage;
     private bool _disposed;
 
     public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, DownloadInterceptor downloads, ThemeService theme, AppLogger log)
@@ -111,6 +112,12 @@ public sealed class BrowserTab : IDisposable
 
     /// <summary>The page called window.close() (for example a sign-in popup that finished).</summary>
     public event EventHandler? CloseRequested;
+
+    /// <summary>
+    /// A download started in a tab that never showed a page (a download link opened in a new tab, or Retry): the tab is
+    /// blank and can go. Its WebView is kept for the download when the tab closes (see <see cref="Dispose"/>).
+    /// </summary>
+    public event EventHandler? OnlyDownloaded;
 
     /// <summary>Creates the WebView2 control. Problems are reported through <see cref="ProblemOccurred"/>, never thrown.</summary>
     public Task InitializeAsync() => StartEngineAsync(recreateEnvironment: false);
@@ -220,7 +227,7 @@ public sealed class BrowserTab : IDisposable
 
         _disposed = true;
         _theme.ThemeChanged -= OnThemeChanged;
-        DetachWebView();
+        DetachWebView(keepForDownloads: true);
     }
 
     // ---------------------------------------------------------------- creating the WebView
@@ -333,13 +340,21 @@ public sealed class BrowserTab : IDisposable
         core.Find.ActiveMatchIndexChanged += OnFindResultsChanged;
         webView.ZoomFactorChanged += OnZoomFactorChanged;
         _downloads.Attach(core);
+        core.DownloadStarting += OnDownloadStartingInTab; // after the interceptor's handler
 
         ZoomFactor = webView.ZoomFactor;
         UpdateState(core);
     }
 
-    private void DetachWebView()
+    /// <param name="keepForDownloads">
+    /// Closing the tab: if this WebView still owns downloads, hand it to <see cref="DownloadInterceptor.Park"/> instead
+    /// of disposing it (disposing freezes them, spike F5). Engine restarts pass false: the old engine is gone anyway.
+    /// </param>
+    private void DetachWebView(bool keepForDownloads = false)
     {
+        var detachedCore = _core;
+        var park = keepForDownloads && _core is not null && _webView is not null && _downloads.OwnsDownloads(_core);
+
         if (_core is not null)
         {
             try
@@ -357,6 +372,7 @@ public sealed class BrowserTab : IDisposable
                 _core.ContextMenuRequested -= OnContextMenuRequested;
                 _core.Find.MatchCountChanged -= OnFindResultsChanged;
                 _core.Find.ActiveMatchIndexChanged -= OnFindResultsChanged;
+                _core.DownloadStarting -= OnDownloadStartingInTab;
                 _downloads.Detach(_core);
             }
             catch (Exception ex)
@@ -372,13 +388,20 @@ public sealed class BrowserTab : IDisposable
         {
             _webView.ZoomFactorChanged -= OnZoomFactorChanged;
             _host.Children.Remove(_webView);
-            try
+            if (park)
             {
-                _webView.Dispose();
+                _downloads.Park(_webView, detachedCore!);
             }
-            catch (Exception ex)
+            else
             {
-                _log.Debug($"Disposing a dead WebView: {ex.GetType().Name}");
+                try
+                {
+                    _webView.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug($"Disposing a dead WebView: {ex.GetType().Name}");
+                }
             }
 
             _webView = null;
@@ -413,6 +436,11 @@ public sealed class BrowserTab : IDisposable
         }
 
         IsLoading = false;
+        if (e.IsSuccess)
+        {
+            _hasCommittedPage = true;
+        }
+
         if (sender is CoreWebView2 core)
         {
             UpdateState(core);
@@ -535,6 +563,15 @@ public sealed class BrowserTab : IDisposable
         // Never let WebView2 open its own window: it would skip Configure() (spike F10). The deferral makes
         // WebView2 wait until the new tab's WebView is ready to be handed over.
         PopupRequested.Invoke(this, new PopupRequest(e, e.GetDeferral(), target));
+    }
+
+    /// <summary>A navigation that becomes a download never completes successfully, so a tab with no page yet stays blank.</summary>
+    private void OnDownloadStartingInTab(object? sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        if (!_hasCommittedPage)
+        {
+            _host.Dispatcher.BeginInvoke(() => OnlyDownloaded?.Invoke(this, EventArgs.Empty));
+        }
     }
 
     private void OnWindowCloseRequested(object? sender, object e) =>

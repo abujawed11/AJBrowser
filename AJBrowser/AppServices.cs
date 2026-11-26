@@ -49,6 +49,7 @@ public sealed class AppServices : IDisposable
             new HttpFileDownloader(new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
             namer);
         var downloadLog = CreateLogger(nameof(DownloadManager));
+        DownloadManager.MaxConcurrent = settings.Current.MaxConcurrentDownloads;
         DownloadManager.PersistenceFailed += (_, ex) => downloadLog.Warn("Saving a download's state failed", ex);
         DownloadInterceptor = new DownloadInterceptor(
             DownloadManager, namer, settings, AskSavePath, () => KnownFolders.Downloads, CreateLogger(nameof(DownloadInterceptor)));
@@ -160,7 +161,7 @@ public sealed class AppServices : IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(page), page, null),
     };
 
-    /// <summary>Applies settings that services own: the theme and the search engine.</summary>
+    /// <summary>Applies settings that services own: the theme, the search engine and the download limit.</summary>
     private void OnSettingsChanged(object? sender, AppSettings previous)
     {
         var current = Settings.Current;
@@ -170,6 +171,7 @@ public sealed class AppServices : IDisposable
         }
 
         AddressResolver.SearchTemplate = SearchEngines.TemplateFor(current);
+        DownloadManager.MaxConcurrent = current.MaxConcurrentDownloads;
     }
 
     /// <summary>"Ask where to save": a Save dialog over the main window. Returns the chosen path, or null if cancelled.</summary>
@@ -201,6 +203,7 @@ public sealed class AppServices : IDisposable
     {
         Settings.Changed -= OnSettingsChanged;
         Downloads.Dispose();
+        DownloadInterceptor.Dispose();
         Theme.Dispose();
         LogSink.Dispose();
     }

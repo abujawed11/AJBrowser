@@ -116,6 +116,45 @@ public partial class App : Application
         catch (Exception ex)
         {
             _log?.Error("Loading the download list failed", ex);
+            return;
+        }
+
+        await OfferPartialFileCleanupAsync(services);
+    }
+
+    /// <summary>
+    /// Old ".ajpart" files (unfinished AJBrowser downloads that nothing will continue) in the download folders:
+    /// offer to delete them. Never deletes without asking (plan Phase 4c).
+    /// </summary>
+    private async Task OfferPartialFileCleanupAsync(AppServices services)
+    {
+        try
+        {
+            var folders = new[] { services.Settings.Current.DownloadFolder ?? string.Empty, Services.KnownFolders.Downloads };
+            var items = services.DownloadManager.Items;
+            var stale = await Task.Run(() => Core.Downloads.PartialFileCleanup.Find(folders, items, Core.Downloads.PartialFileCleanup.DefaultAge, DateTime.UtcNow));
+            if (stale.Count == 0)
+            {
+                return;
+            }
+
+            var size = Core.Downloads.DownloadText.Size(stale.Sum(f => f.Bytes));
+            var answer = MessageBox.Show(
+                MainWindow,
+                $"AJBrowser found {stale.Count} unfinished download file(s) older than {Core.Downloads.PartialFileCleanup.DefaultAge.Days} days ({size}, ending in \".ajpart\") that no download will continue.\n\nDelete them?",
+                "AJBrowser",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question,
+                MessageBoxResult.No);
+            if (answer == MessageBoxResult.Yes)
+            {
+                var deleted = await Task.Run(() => Core.Downloads.PartialFileCleanup.Delete(stale));
+                _log?.Info($"Deleted {deleted} of {stale.Count} old partial download file(s)");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log?.Warn("Checking for old partial download files failed", ex);
         }
     }
 

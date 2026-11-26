@@ -18,6 +18,8 @@ public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
     private bool _isInFullScreen;
+    private bool _isClosed;
+    private bool _windowsIsShuttingDown;
     private WindowState _stateBeforeFullScreen;
 
     public MainWindow(MainWindowViewModel viewModel)
@@ -28,14 +30,17 @@ public partial class MainWindow : Window
         _viewModel.FocusAddressBarRequested += OnFocusAddressBarRequested;
         _viewModel.CloseWindowRequested += OnCloseWindowRequested;
         Closing += OnWindowClosing;
+        Application.Current.SessionEnding += OnSessionEnding;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         _viewModel.Downloads.DownloadStarted += OnDownloadStarted;
         Closed += (_, _) =>
         {
             _viewModel.Downloads.DownloadStarted -= OnDownloadStarted;
             _viewModel.FocusAddressBarRequested -= OnFocusAddressBarRequested;
+            _isClosed = true;
             _viewModel.CloseWindowRequested -= OnCloseWindowRequested;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            Application.Current.SessionEnding -= OnSessionEnding;
         };
     }
 
@@ -171,7 +176,18 @@ public partial class MainWindow : Window
 
     private void OnFocusAddressBarRequested(object? sender, EventArgs e) => FocusAddressBar();
 
-    private void OnCloseWindowRequested(object? sender, EventArgs e) => Close();
+    /// <summary>The last tab was closed. If closing is refused (downloads still running), show a home tab again.</summary>
+    private void OnCloseWindowRequested(object? sender, EventArgs e)
+    {
+        Close();
+        if (!_isClosed)
+        {
+            _viewModel.EnsureTab();
+        }
+    }
+
+    /// <summary>Windows is signing out or shutting down: don't hold it up with a question.</summary>
+    private void OnSessionEnding(object? sender, SessionEndingCancelEventArgs e) => _windowsIsShuttingDown = true;
 
     /// <summary>
     /// The WPF WebView2 control has a built-in reaction to a page calling window.close(): it closes the whole WPF
@@ -192,6 +208,25 @@ public partial class MainWindow : Window
                             && method.Name.Contains("WindowCloseRequested", StringComparison.Ordinal)))
         {
             e.Cancel = true;
+            return;
+        }
+
+        // Browser downloads die with the engine and can't continue after a restart: ask first (plan Phase 4c).
+        var unfinished = _viewModel.Downloads.UnfinishedBrowserDownloads;
+        if (unfinished > 0 && !_windowsIsShuttingDown)
+        {
+            var what = unfinished == 1 ? "1 download is" : $"{unfinished} downloads are";
+            var answer = MessageBox.Show(
+                this,
+                $"{what} not finished. If you close AJBrowser now, {(unfinished == 1 ? "it stops" : "they stop")} and will have to start again from the beginning.\n\nClose anyway?",
+                "AJBrowser",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes)
+            {
+                e.Cancel = true;
+            }
         }
     }
 

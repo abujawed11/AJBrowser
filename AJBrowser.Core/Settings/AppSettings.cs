@@ -52,6 +52,15 @@ public sealed record AppSettings
     /// <summary>Ask where to save each download (Phase 4).</summary>
     public bool AskWhereToSave { get; init; }
 
+    public const int MinConcurrentDownloads = 1;
+    public const int MaxConcurrentDownloadsLimit = 10;
+
+    /// <summary>
+    /// How many of AJBrowser's own downloads (detected videos, from Phase 5) run at once; the rest wait their turn.
+    /// Normal browser downloads aren't limited (the engine runs them).
+    /// </summary>
+    public int MaxConcurrentDownloads { get; init; } = Downloads.DownloadManager.DefaultMaxConcurrent;
+
     /// <summary>The home page as a URI (falls back to the default if the stored text is invalid).</summary>
     [JsonIgnore]
     public Uri HomePageUri => TryParseHomePage(HomePage) ?? new Uri(DefaultHomePage);
@@ -114,6 +123,11 @@ public sealed record AppSettings
         if (!Enum.IsDefined(Theme))
         {
             result = result with { Theme = ThemeSetting.System };
+        }
+
+        if (MaxConcurrentDownloads is < MinConcurrentDownloads or > MaxConcurrentDownloadsLimit)
+        {
+            result = result with { MaxConcurrentDownloads = Math.Clamp(MaxConcurrentDownloads, MinConcurrentDownloads, MaxConcurrentDownloadsLimit) };
         }
 
         if (string.IsNullOrWhiteSpace(DownloadFolder))

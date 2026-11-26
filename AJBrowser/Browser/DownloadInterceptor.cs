@@ -5,6 +5,7 @@ using AJBrowser.Core.Logging;
 using AJBrowser.Core.Security;
 using AJBrowser.Core.Settings;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 
 namespace AJBrowser.Browser;
 
@@ -17,11 +18,15 @@ namespace AJBrowser.Browser;
 /// <item>Registers the download with <see cref="DownloadManager"/> and forwards the runtime's progress and state.</item>
 /// <item>Pause, resume and cancel of browser downloads go through here, because only the live
 /// <see cref="CoreWebView2DownloadOperation"/> can do them. After an app restart the operation is gone (Retry instead).</item>
+/// <item><b>Keeps closed tabs' WebViews alive while they own downloads</b> (4c). Disposing a WebView freezes its
+/// downloads (spike F5); a WebView taken out of the window but not disposed keeps downloading, even after navigating
+/// to about:blank, and pause/resume still work (4c spike, plan §11 F18). <see cref="BrowserTab"/> hands such a WebView
+/// to <see cref="Park"/>; it's disposed here once its last download is over.</item>
 /// </list>
 /// One instance for the whole app; every WebView is attached in <see cref="BrowserTab"/>'s Configure.
 /// Runs on the UI thread (all WebView2 events do).
 /// </summary>
-public sealed class DownloadInterceptor
+public sealed class DownloadInterceptor : IDisposable
 {
     private readonly DownloadManager _manager;
     private readonly FileNamer _namer;
@@ -29,7 +34,15 @@ public sealed class DownloadInterceptor
     private readonly Func<string, string, string?> _askSavePath;
     private readonly Func<string> _defaultFolder;
     private readonly AppLogger _log;
+
+    /// <summary>Registered downloads whose operation can still be controlled, by download id.</summary>
     private readonly Dictionary<long, Tracked> _live = [];
+
+    /// <summary>Downloads that still need their WebView (running, paused, or waiting for the Save dialog), per WebView.</summary>
+    private readonly Dictionary<CoreWebView2, HashSet<Tracked>> _byCore = [];
+
+    /// <summary>WebViews of closed tabs, kept only for their downloads.</summary>
+    private readonly Dictionary<CoreWebView2, WebView2> _parked = [];
 
     /// <param name="askSavePath">Shows a Save dialog for (folder, suggested name); returns the chosen path or null if cancelled.</param>
     /// <param name="defaultFolder">The Windows Downloads folder.</param>
@@ -49,6 +62,15 @@ public sealed class DownloadInterceptor
     /// <summary>The live operation for this download still exists (so pause/resume/cancel can work).</summary>
     public bool IsLive(long id) => _live.ContainsKey(id);
 
+    /// <summary>Downloads that would stop if AJBrowser closed now: running or paused ones with a live operation.</summary>
+    public int UnfinishedCount => _byCore.Values.Sum(set => set.Count);
+
+    /// <summary>This WebView has downloads that need it (closing it would freeze them).</summary>
+    public bool OwnsDownloads(CoreWebView2 core) => _byCore.TryGetValue(core, out var set) && set.Count > 0;
+
+    /// <summary>How many closed tabs' WebViews are being kept for their downloads (for the log and tests by hand).</summary>
+    public int ParkedCount => _parked.Count;
+
     public void Attach(CoreWebView2 core) => core.DownloadStarting += OnDownloadStarting;
 
     public void Detach(CoreWebView2 core) => core.DownloadStarting -= OnDownloadStarting;
@@ -67,13 +89,43 @@ public sealed class DownloadInterceptor
     /// <summary>Cancels; the runtime deletes its partial data.</summary>
     public void Cancel(long id) => Run(id, op => op.Cancel());
 
+    /// <summary>
+    /// A closing tab's WebView that still owns downloads: AJBrowser keeps it (out of the window, page unloaded) and
+    /// disposes it when its downloads are over. The caller has already removed it from the window and its own events.
+    /// </summary>
+    public void Park(WebView2 webView, CoreWebView2 core)
+    {
+        _parked[core] = webView;
+        try
+        {
+            core.IsMuted = true;
+            core.Navigate("about:blank"); // unloads the page (scripts, video); downloads continue (spike F18)
+        }
+        catch (Exception ex)
+        {
+            _log.Debug($"Unloading a parked page failed: {ex.GetType().Name}");
+        }
+
+        _log.Info($"Kept a closed tab's engine for its download(s) ({_parked.Count} kept)");
+        if (!OwnsDownloads(core))
+        {
+            ReleaseParked(core); // finished meanwhile
+        }
+    }
+
     // ---------------------------------------------------------------- choosing the file
 
     private void OnDownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs e)
     {
+        var core = (CoreWebView2)sender!;
         var operation = e.DownloadOperation;
-        var pageUrl = (sender as CoreWebView2)?.Source;
+        var pageUrl = core.Source;
         e.Handled = true; // no Edge download flyout
+
+        // Claim the WebView right away: a popup that only started a download closes itself straight after this
+        // event (F17), and that tab must not dispose its WebView while the download runs.
+        var tracked = new Tracked(operation, core);
+        Own(tracked);
 
         string suggested;
         try
@@ -94,7 +146,7 @@ public sealed class DownloadInterceptor
         {
             var path = _namer.ReservePath(folder, suggested);
             e.ResultFilePath = path;
-            _ = TrackAsync(operation, pageUrl, path, reserved: true);
+            _ = TrackAsync(tracked, pageUrl, path, reserved: true);
             return;
         }
 
@@ -128,9 +180,13 @@ public sealed class DownloadInterceptor
                 deferral.Complete();
             }
 
-            if (chosen is not null)
+            if (chosen is null)
             {
-                _ = TrackAsync(operation, pageUrl, chosen, reserved: false);
+                Finish(tracked);
+            }
+            else
+            {
+                _ = TrackAsync(tracked, pageUrl, chosen, reserved: false);
             }
         });
     }
@@ -155,10 +211,10 @@ public sealed class DownloadInterceptor
 
     // ---------------------------------------------------------------- following the download
 
-    private async Task TrackAsync(CoreWebView2DownloadOperation operation, string? pageUrl, string path, bool reserved)
+    private async Task TrackAsync(Tracked tracked, string? pageUrl, string path, bool reserved)
     {
         // Subscribe first: events that arrive while the database row is being created are caught up below.
-        var tracked = new Tracked(operation);
+        var operation = tracked.Operation;
         operation.StateChanged += (_, _) => Report(tracked);
         operation.BytesReceivedChanged += (_, _) => Report(tracked);
 
@@ -179,14 +235,17 @@ public sealed class DownloadInterceptor
             {
                 _namer.Release(path);
             }
+
+            tracked.Unrecorded = true; // still followed, so its WebView is released when it ends
+            Report(tracked);
         }
     }
 
     private void Report(Tracked tracked)
     {
-        if (tracked.Id == 0)
+        if ((tracked.Id == 0 && !tracked.Unrecorded) || tracked.IsFinished)
         {
-            return; // not registered yet; TrackAsync reports the current state once it is
+            return; // not registered yet (TrackAsync reports once it is), or already over
         }
 
         var op = tracked.Operation;
@@ -195,7 +254,11 @@ public sealed class DownloadInterceptor
             var reason = op.State == CoreWebView2DownloadState.Interrupted ? op.InterruptReason.ToString() : null;
             var (state, error) = BrowserDownloadStatus.Map(op.State.ToString(), reason);
             long? total = op.TotalBytesToReceive is > 0 and var t ? (long)t : null;
-            _manager.UpdateBrowserDownload(tracked.Id, state, op.BytesReceived, total, op.CanResume, error, op.ResultFilePath);
+            var canResume = op.CanResume;
+            if (!tracked.Unrecorded)
+            {
+                _manager.UpdateBrowserDownload(tracked.Id, state, op.BytesReceived, total, canResume, error, op.ResultFilePath);
+            }
 
             if (state != tracked.LastState)
             {
@@ -205,10 +268,12 @@ public sealed class DownloadInterceptor
                     _log.Info($"Download {state.ToString().ToLowerInvariant()}{(reason is null ? string.Empty : $" ({reason})")}: {Path.GetFileName(op.ResultFilePath)}");
                 }
 
-                // Nothing more will happen to a finished download that can't be resumed.
-                if (state is DownloadState.Completed or DownloadState.Cancelled || (state is DownloadState.Failed && !op.CanResume))
+                // Over for good: nothing can continue it, so it no longer needs its operation or its WebView.
+                // (Failed shows Retry, which starts a new download; an interruption that can't resume is the same.)
+                if (state is DownloadState.Completed or DownloadState.Cancelled or DownloadState.Failed
+                    || (state == DownloadState.Interrupted && !canResume))
                 {
-                    _live.Remove(tracked.Id);
+                    Finish(tracked);
                 }
             }
         }
@@ -216,7 +281,7 @@ public sealed class DownloadInterceptor
         {
             // The browser process is gone: the COM object can't be read any more.
             _log.Debug($"Download operation unavailable: {ex.GetType().Name}");
-            _live.Remove(tracked.Id);
+            Finish(tracked);
         }
     }
 
@@ -237,10 +302,97 @@ public sealed class DownloadInterceptor
         }
     }
 
-    private sealed class Tracked(CoreWebView2DownloadOperation operation)
+    // ---------------------------------------------------------------- which WebView owns what
+
+    private void Own(Tracked tracked)
+    {
+        if (!_byCore.TryGetValue(tracked.Core, out var set))
+        {
+            _byCore[tracked.Core] = set = [];
+        }
+
+        set.Add(tracked);
+    }
+
+    /// <summary>The download is over (or never started): forget its operation and free its WebView if it was parked.</summary>
+    private void Finish(Tracked tracked)
+    {
+        if (tracked.IsFinished)
+        {
+            return;
+        }
+
+        tracked.IsFinished = true;
+        if (tracked.Id != 0)
+        {
+            _live.Remove(tracked.Id);
+        }
+
+        if (_byCore.TryGetValue(tracked.Core, out var set))
+        {
+            set.Remove(tracked);
+            if (set.Count == 0)
+            {
+                _byCore.Remove(tracked.Core);
+                if (_parked.ContainsKey(tracked.Core))
+                {
+                    // Not inside the operation's own event: dispose on the next dispatcher turn.
+                    var core = tracked.Core;
+                    Dispatcher.CurrentDispatcher.BeginInvoke(() => ReleaseParked(core));
+                }
+            }
+        }
+    }
+
+    private void ReleaseParked(CoreWebView2 core)
+    {
+        if (OwnsDownloads(core) || !_parked.Remove(core, out var webView))
+        {
+            return; // a new download started meanwhile, or already released
+        }
+
+        try
+        {
+            webView.Dispose();
+        }
+        catch (Exception ex)
+        {
+            _log.Debug($"Disposing a kept engine failed: {ex.GetType().Name}");
+        }
+
+        _log.Info($"Released a closed tab's engine after its downloads ({_parked.Count} still kept)");
+    }
+
+    /// <summary>App exit: dispose kept WebViews (their downloads end with the browser process anyway).</summary>
+    public void Dispose()
+    {
+        foreach (var webView in _parked.Values)
+        {
+            try
+            {
+                webView.Dispose();
+            }
+            catch (Exception)
+            {
+                // Exiting; nothing to do.
+            }
+        }
+
+        _parked.Clear();
+    }
+
+    private sealed class Tracked(CoreWebView2DownloadOperation operation, CoreWebView2 core)
     {
         public CoreWebView2DownloadOperation Operation { get; } = operation;
+
+        /// <summary>The WebView the download belongs to (it must stay alive until the download is over).</summary>
+        public CoreWebView2 Core { get; } = core;
+
         public long Id { get; set; }
         public DownloadState? LastState { get; set; }
+        public bool IsFinished { get; set; }
+
+        /// <summary>Saving it to the list failed: not shown, but still followed until it ends.</summary>
+        public bool Unrecorded { get; set; }
     }
 }

@@ -53,6 +53,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.PopupBlocked += OnBrowserPopupBlocked;
         _browser.OpenInNewTabRequested += OnBrowserOpenInNewTabRequested;
         _browser.CloseRequested += OnBrowserCloseRequested;
+        _browser.OnlyDownloaded += OnBrowserOnlyDownloaded;
         _services.Bookmarks.Changed += OnBookmarksChanged;
         _services.Favicons.Changed += OnFaviconsChanged;
     }
@@ -65,6 +66,9 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
 
     /// <summary>The page asked to close its own tab (window.close()).</summary>
     public event EventHandler? CloseRequested;
+
+    /// <summary>This tab never showed a page and only started a download: it's blank and can be closed.</summary>
+    public event EventHandler? OnlyDownloaded;
 
     /// <summary>The page element to show in the window (hosts the WebView2 control).</summary>
     public object BrowserView => _browser.View;
@@ -736,6 +740,8 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
 
     private void OnBrowserCloseRequested(object? sender, EventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
+    private void OnBrowserOnlyDownloaded(object? sender, EventArgs e) => OnlyDownloaded?.Invoke(this, EventArgs.Empty);
+
     private void SetAddress(string text)
     {
         _isSettingAddress = true;
@@ -760,6 +766,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.PopupBlocked -= OnBrowserPopupBlocked;
         _browser.OpenInNewTabRequested -= OnBrowserOpenInNewTabRequested;
         _browser.CloseRequested -= OnBrowserCloseRequested;
+        _browser.OnlyDownloaded -= OnBrowserOnlyDownloaded;
         _services.Bookmarks.Changed -= OnBookmarksChanged;
         _services.Favicons.Changed -= OnFaviconsChanged;
         Suggestions.Dispose();

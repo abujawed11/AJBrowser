@@ -80,6 +80,12 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Browser downloads that would be lost if AJBrowser closed now (running or paused; the engine can't continue them
+    /// after a restart). App downloads aren't counted: they pause and resume next time.
+    /// </summary>
+    public int UnfinishedBrowserDownloads => _interceptor.UnfinishedCount;
+
     /// <summary>The folder new downloads go to.</summary>
     public string DownloadFolder => _settings.Current.DownloadFolder ?? KnownFolders.Downloads;
 

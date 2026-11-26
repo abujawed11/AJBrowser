@@ -103,6 +103,16 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
         set => _settings.Update(s => s with { AskWhereToSave = value });
     }
 
+    /// <summary>Choices for "Simultaneous downloads": 1 to 10.</summary>
+    public IReadOnlyList<int> ConcurrentDownloadChoices { get; } =
+        Enumerable.Range(AppSettings.MinConcurrentDownloads, AppSettings.MaxConcurrentDownloadsLimit - AppSettings.MinConcurrentDownloads + 1).ToList();
+
+    public int MaxConcurrentDownloads
+    {
+        get => _settings.Current.MaxConcurrentDownloads;
+        set => _settings.Update(s => s with { MaxConcurrentDownloads = value });
+    }
+
     /// <summary>The Windows Downloads folder, also when the user moved it.</summary>
     public static string DefaultDownloadFolder => KnownFolders.Downloads;
 
@@ -211,7 +221,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
                      {
                          nameof(IsThemeSystem), nameof(IsThemeLight), nameof(IsThemeDark), nameof(ShowBookmarksBar),
                          nameof(IsStartupHomePage), nameof(IsStartupRestore), nameof(DownloadFolderText),
-                         nameof(HasCustomDownloadFolder), nameof(AskWhereToSave),
+                         nameof(HasCustomDownloadFolder), nameof(AskWhereToSave), nameof(MaxConcurrentDownloads),
                      })
             {
                 OnPropertyChanged(name);

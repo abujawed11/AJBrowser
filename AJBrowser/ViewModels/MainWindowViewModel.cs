@@ -177,6 +177,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     // ---------------------------------------------------------------- opening tabs
 
+    /// <summary>The window refused to close (downloads still running) after its last tab closed: show a home tab again.</summary>
+    public void EnsureTab()
+    {
+        if (Tabs.Count == 0)
+        {
+            OpenTab(null, select: true);
+        }
+    }
+
     /// <summary>Ctrl+T or the "+" button: a new tab with the home page, address bar focused.</summary>
     [RelayCommand]
     private void NewTab()
@@ -206,6 +215,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         tab.NewTabRequested += OnTabNewTabRequested;
         tab.PopupRequested += OnTabPopupRequested;
         tab.CloseRequested += OnTabCloseRequested;
+        tab.OnlyDownloaded += OnTabOnlyDownloaded;
         tab.PropertyChanged += OnTabPropertyChanged;
 
         Tabs.Insert(Math.Clamp(position, 0, Tabs.Count), tab);
@@ -238,6 +248,28 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         if (sender is TabViewModel tab)
         {
             CloseTab(tab);
+        }
+    }
+
+    /// <summary>
+    /// A tab that never showed a page only started a download (a download link opened in a new tab, or Retry): close
+    /// it, like Chrome; its download keeps going (the WebView is kept, 4c). The last tab shows the home page instead,
+    /// because closing it would close the window.
+    /// </summary>
+    private void OnTabOnlyDownloaded(object? sender, EventArgs e)
+    {
+        if (sender is not TabViewModel tab || !Tabs.Contains(tab))
+        {
+            return;
+        }
+
+        if (Tabs.Count > 1)
+        {
+            CloseTabCore(tab, rememberForReopen: false);
+        }
+        else
+        {
+            tab.HomeCommand.Execute(null);
         }
     }
 
@@ -353,9 +385,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>Ctrl+W, the tab's ✕, middle-click, or window.close().</summary>
     [RelayCommand]
-    private void CloseTab(TabViewModel? tab)
+    private void CloseTab(TabViewModel? tab) => CloseTabCore(tab ?? SelectedTab, rememberForReopen: true);
+
+    private void CloseTabCore(TabViewModel? tab, bool rememberForReopen)
     {
-        tab ??= SelectedTab;
         if (tab is null)
         {
             return;
@@ -369,7 +402,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _log.Debug($"Closing tab {index + 1} of {Tabs.Count}");
 
-        if (tab.Url is { } url && Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        // A blank tab (for example a popup that only started a download) isn't worth reopening.
+        if (rememberForReopen && tab.Url is { } url && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && !url.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
         {
             _closedTabs.Push(new ClosedTab(uri, tab.Title, index));
             CanReopenClosedTab = true;
@@ -384,8 +419,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         tab.NewTabRequested -= OnTabNewTabRequested;
         tab.PopupRequested -= OnTabPopupRequested;
         tab.CloseRequested -= OnTabCloseRequested;
+        tab.OnlyDownloaded -= OnTabOnlyDownloaded;
         tab.PropertyChanged -= OnTabPropertyChanged;
-        tab.Dispose();
+        tab.Dispose(); // a WebView that still owns downloads is kept until they finish (DownloadInterceptor.Park)
 
         if (Tabs.Count == 0)
         {

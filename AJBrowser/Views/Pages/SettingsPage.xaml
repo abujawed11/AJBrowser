@@ -107,8 +107,6 @@
             <TextBlock Text="Downloads" Style="{StaticResource SectionHeadingStyle}" />
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel>
-                    <TextBlock Text="The download manager arrives in a later version; these choices are already remembered."
-                               Style="{StaticResource SecondaryTextStyle}" Margin="0,0,0,12" />
                     <DockPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button Content="Reset" Command="{Binding ResetDownloadFolderCommand}" Margin="0,0,8,0"
@@ -125,6 +123,18 @@
                         <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggleStyle}"
                                       IsChecked="{Binding AskWhereToSave}" AutomationProperties.Name="Ask where to save each file" />
                         <TextBlock Text="Ask where to save each file" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
+                    <DockPanel>
+                        <ComboBox DockPanel.Dock="Right" VerticalAlignment="Center" MinWidth="80"
+                                  ItemsSource="{Binding ConcurrentDownloadChoices}"
+                                  SelectedItem="{Binding MaxConcurrentDownloads}"
+                                  AutomationProperties.Name="Simultaneous video downloads" />
+                        <StackPanel>
+                            <TextBlock Text="Simultaneous video downloads" FontWeight="SemiBold" />
+                            <TextBlock Text="Videos AJBrowser downloads itself (coming in a later version) beyond this number wait their turn. Normal downloads aren't limited."
+                                       Style="{StaticResource SecondaryTextStyle}" />
+                        </StackPanel>
                     </DockPanel>
                 </StackPanel>
             </Border>
