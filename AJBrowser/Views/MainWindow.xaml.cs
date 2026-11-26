@@ -33,9 +33,14 @@ public partial class MainWindow : Window
         Application.Current.SessionEnding += OnSessionEnding;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         _viewModel.Downloads.DownloadStarted += OnDownloadStarted;
+        _viewModel.Downloads.DownloadCompleted += OnDownloadCompleted;
+        _completedTimer.Tick += (_, _) => CloseCompletedMessage();
+        Deactivated += (_, _) => CloseCompletedMessage(); // a topmost popup mustn't float over other apps
         Closed += (_, _) =>
         {
             _viewModel.Downloads.DownloadStarted -= OnDownloadStarted;
+            _viewModel.Downloads.DownloadCompleted -= OnDownloadCompleted;
+            _completedTimer.Stop();
             _viewModel.FocusAddressBarRequested -= OnFocusAddressBarRequested;
             _isClosed = true;
             _viewModel.CloseWindowRequested -= OnCloseWindowRequested;
@@ -569,7 +574,101 @@ public partial class MainWindow : Window
         }
     }
 
-    private void DownloadsPopup_Opened(object? sender, EventArgs e) => _viewModel.Downloads.RefreshFiles();
+    private void DownloadsPopup_Opened(object? sender, EventArgs e)
+    {
+        CloseCompletedMessage();
+        _viewModel.Downloads.MarkCompletedSeen();
+        _viewModel.Downloads.RefreshFiles();
+    }
+
+    // ---------------------------------------------------------------- "download complete"
+
+    private readonly DispatcherTimer _completedTimer = new() { Interval = TimeSpan.FromSeconds(7) };
+    private DownloadItemViewModel? _completedItem;
+
+    /// <summary>
+    /// A download finished. In front: a short message under the downloads button (not over a fullscreen video, not while
+    /// the downloads list is open, which shows it anyway). In the background or minimized: the taskbar button flashes
+    /// until AJBrowser is brought back. The green dot on the button stays until the list is opened.
+    /// </summary>
+    private void OnDownloadCompleted(object? sender, DownloadItemViewModel item)
+    {
+        if (!IsActive || WindowState == WindowState.Minimized)
+        {
+            FlashTaskbar();
+            return;
+        }
+
+        if (_viewModel.IsFullScreen || DownloadsPopup.IsOpen)
+        {
+            return;
+        }
+
+        _completedItem = item;
+        CompletedFileName.Text = item.FileName;
+        CompletedFileName.ToolTip = item.Item.FilePath;
+        CompletedPopup.IsOpen = true;
+        _completedTimer.Stop();
+        _completedTimer.Start();
+    }
+
+    private void CloseCompletedMessage()
+    {
+        _completedTimer.Stop();
+        CompletedPopup.IsOpen = false;
+    }
+
+    private void CompletedOpen_Click(object sender, RoutedEventArgs e)
+    {
+        _completedItem?.OpenCommand.Execute(null);
+        _viewModel.Downloads.MarkCompletedSeen();
+        CloseCompletedMessage();
+    }
+
+    private void CompletedShowInFolder_Click(object sender, RoutedEventArgs e)
+    {
+        _completedItem?.ShowInFolderCommand.Execute(null);
+        _viewModel.Downloads.MarkCompletedSeen();
+        CloseCompletedMessage();
+    }
+
+    private void CompletedClose_Click(object sender, RoutedEventArgs e) => CloseCompletedMessage();
+
+    /// <summary>Flashes the taskbar button until the window comes to the front (Windows' usual "something happened").</summary>
+    private void FlashTaskbar()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var info = new FlashWindowInfo
+        {
+            Size = (uint)Marshal.SizeOf<FlashWindowInfo>(),
+            Hwnd = hwnd,
+            Flags = FlashTray | FlashUntilForeground,
+            Count = uint.MaxValue,
+            Timeout = 0,
+        };
+        FlashWindowEx(ref info);
+    }
+
+    private const uint FlashTray = 0x2;
+    private const uint FlashUntilForeground = 0xC;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FlashWindowInfo
+    {
+        public uint Size;
+        public IntPtr Hwnd;
+        public uint Flags;
+        public uint Count;
+        public uint Timeout;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool FlashWindowEx(ref FlashWindowInfo info);
 
     private void DownloadsPopup_Closed(object? sender, EventArgs e) => _downloadsPopupClosedAt = Environment.TickCount64;
 

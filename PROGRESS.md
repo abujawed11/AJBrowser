@@ -177,6 +177,10 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 
 ## 6. Next task: try Phase 6, then start Phase 7
 
+**Download-complete notice (added after your report; not yet tried in the app):**
+- A download finishing while AJBrowser is in front → a small "✓ Download complete" message under the downloads button with **Open** / **Show in folder** (closes by itself after ~7 s); a green dot stays on the button until you open the list.
+- While downloads run, the taskbar button shows a progress bar. If one finishes while AJBrowser is in the background or minimized, the taskbar button flashes until you come back.
+
 **Phase 6c quick try:**
 5. On a page with an HLS video, open the film button → the stream row says "reading qualities…", then shows the length and a quality list with estimated sizes; pick a small one → Download.
 6. With FFmpeg set (Settings → Downloads → FFmpeg), a stream whose sound is a separate track gets it merged into an `.mp4`; without FFmpeg the row tells you and only the picture is saved. *The agent couldn't test merging (no FFmpeg on this PC): please try it once.*

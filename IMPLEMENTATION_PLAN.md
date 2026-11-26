@@ -893,6 +893,7 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | 2026-11-27 | Phase 6 FFmpeg: option **A + C**: HLS works without FFmpeg (fMP4 → .mp4, TS → .ts); an optional ffmpeg.exe (Settings path or PATH) turns TS into .mp4/.mkv. No bundling or on-demand download yet (revisit in 6c/Phase 10) | Your choice; no licence work or 80–100 MB download needed now, full quality when FFmpeg is present |
 | 2026-11-27 | Stream downloads send the Cookie header only to the host the cookies were fetched for | Pieces often come from other CDN hosts, which must not receive the site's cookies |
 | 2026-11-27 | FFmpeg remux doesn't pass `-bsf:a aac_adtstoasc` explicitly (plan §6.4 said it would) | Recent FFmpeg inserts it automatically for MP4 when needed; forcing it breaks TS streams with MP3 audio |
+| 2026-11-27 | "Download complete" (your report): in-app message under the downloads button (Open / Show in folder, closes after 7 s), green dot on the button until the list is opened, download progress on the taskbar button, taskbar flash when a download finishes while AJBrowser is in the background or minimized. No Windows (Action Center) notification for now | No new package: WPF's `TaskbarItemInfo` + `FlashWindowEx` cover the background case; a real toast notification would need a notifications package (revisit if wanted) |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---

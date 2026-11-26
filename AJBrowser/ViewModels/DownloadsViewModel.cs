@@ -95,6 +95,22 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
     /// </summary>
     public Func<DownloadItem, Task>? RefreshSourceBeforeRetry { get; set; }
 
+    /// <summary>A download finished (any kind): the window tells the user (message, taskbar flash).</summary>
+    public event EventHandler<DownloadItemViewModel>? DownloadCompleted;
+
+    /// <summary>A download finished since the list was last opened: a green dot on the toolbar button.</summary>
+    [ObservableProperty]
+    public partial bool HasUnseenCompleted { get; set; }
+
+    /// <summary>The taskbar button's progress bar: running downloads' progress (or a moving bar when sizes are unknown).</summary>
+    public System.Windows.Shell.TaskbarItemProgressState TaskbarState =>
+        !HasActive ? System.Windows.Shell.TaskbarItemProgressState.None
+        : IsActiveIndeterminate && ActiveFraction <= 0 ? System.Windows.Shell.TaskbarItemProgressState.Indeterminate
+        : System.Windows.Shell.TaskbarItemProgressState.Normal;
+
+    /// <summary>The list was looked at: the green dot goes away.</summary>
+    public void MarkCompletedSeen() => HasUnseenCompleted = false;
+
     /// <summary>A page started a download: the window shows the flyout.</summary>
     public event EventHandler? DownloadStarted;
 
@@ -306,8 +322,15 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
     {
         if (_byId.TryGetValue(item.Id, out var existing))
         {
+            var finishedNow = existing.Item.State != DownloadState.Completed && item.State == DownloadState.Completed;
             existing.Update(item);
             RefreshSummary(listChanged: false);
+            if (finishedNow)
+            {
+                HasUnseenCompleted = true;
+                DownloadCompleted?.Invoke(this, existing);
+            }
+
             return;
         }
 
@@ -354,6 +377,7 @@ public sealed partial class DownloadsViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasActive));
         OnPropertyChanged(nameof(ActiveFraction));
         OnPropertyChanged(nameof(IsActiveIndeterminate));
+        OnPropertyChanged(nameof(TaskbarState));
         OnPropertyChanged(nameof(ButtonToolTip));
     }
 
