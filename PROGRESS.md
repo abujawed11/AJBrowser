@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phase 1 🔶 built, awaiting your manual checks · **Next: Phase 2, then Phase 2.5 (ad blocking)**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1 and 2 🔶 built, awaiting your manual checks · **Next: Phase 2.5 (ad blocking)**
 
 ---
 
@@ -42,8 +42,8 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **113 passing tests**.
-   - F5: the browser window opens and loads the Bing home page. The **⋯** menu (top right) has Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
+   - Test Explorer: expect **166 passing tests**.
+   - F5: the browser window opens with one tab and loads the Bing home page. The **⋯** menu (top right) has Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
 4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (logs, WebView2 profile, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
 
@@ -63,25 +63,30 @@ README.md                    build/run + data folders
 IMPLEMENTATION_PLAN.md       full roadmap (phases 0–10), findings, decisions
 PROGRESS.md                  this file
 AJBrowser/                   WPF app (net10.0-windows)
-  App.xaml(.cs)              OnStartup composition, WebView2 runtime check, global exception handlers, --diagnostics args (DEBUG)
+  App.xaml(.cs)              OnStartup composition, WebView2 runtime check, command-line URLs as tabs, global exception handlers, --diagnostics args (DEBUG)
   AppServices.cs             hand-written composition root (no DI container); CreateTab()
   Browser/BrowserEnvironment.cs  shared CoreWebView2Environment (lazy, recreatable), runtime check, profile "Default"
-  Browser/BrowserTab.cs      wraps one WebView2: Configure() = ALL per-WebView setup, navigation, crash recovery
+  Browser/BrowserTab.cs      wraps one WebView2: Configure() = ALL per-WebView setup, navigation, crash recovery,
+                             popups, favicon, zoom, find, fullscreen, context menu
+  Browser/PopupRequest.cs    hands a new tab's WebView to WebView2 as a popup (deferral + NewWindow)
   Browser/PageProblem.cs     error/crash panel model + which navigation errors get a panel
   Services/ThemeService.cs   Fluent ThemeMode (WPF0001 suppressed here) + Light/Dark brush swap, follows Windows
   Services/ShellService.cs   open folder in Explorer, open URL in the default browser
-  ViewModels/MainWindowViewModel.cs   window state: active tab, theme, debug commands
-  ViewModels/TabViewModel.cs address bar, title, loading, back/forward, problem panel
-  Views/MainWindow.xaml(.cs) toolbar, ⋯ menu, loading bar, page area + problem panel
-  Views/Controls/AddressBar  select-all on focus, Enter/Esc handling
+  ViewModels/MainWindowViewModel.cs   tab list, selected tab, close/reopen, popups → tabs, fullscreen, theme, debug
+  ViewModels/TabViewModel.cs address bar, title, favicon, loading, back/forward, zoom, find, blocked popups, problem panel
+  Views/MainWindow.xaml(.cs) tab strip, toolbar, ⋯ menu, find bar, one WebView host per tab, problem panel;
+                             code-behind: keyboard shortcuts, fullscreen, menus
+  Views/Controls/            AddressBar, TabStrip (+ ShrinkingTabPanel), FindBar
   Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle)
   Diagnostics/               Phase 0.5 spike, DEBUG ONLY (excluded from Release via csproj)
 AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Infrastructure/AppPaths.cs %LOCALAPPDATA%\AJBrowser\{WebView2,Data,Filters,Logs,Temp,Tools}
   Logging/                   LogEntry, ILogSink, AppLogger (always redacts), FileLogSink (daily, 5 MB roll, keep 10)
   Security/Redactor.cs       strips URL query/fragment/user-info; redacts Cookie/Authorization/Bearer in text
-  Navigation/                UrlOrSearchResolver, UrlDisplay, BrowserDefaults (Bing home/search until Phase 3)
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation (113 tests)
+  Navigation/                UrlOrSearchResolver, UrlDisplay, BrowserDefaults (Bing home/search until Phase 3),
+                             ZoomLevels, FindStatus, CommandLineUrls
+  Tabs/                      ClosedTabStack, TabSelection
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs (166 tests)
 ```
 
 **Packages:**
@@ -95,8 +100,8 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation (113
 | 0 Foundation | ✅ Done | User verified and committed ("phase 0 done") |
 | 0.5 Feasibility spike | ✅ Done | Automated suite, cookie test and uBO Lite extension test (V5 → F15: blocks YouTube ads) done. Ad-block engine decided. |
 | 1 Single-tab browser | 🔶 Built | Agent: build, 113 tests, launch + home page load. **You:** the manual checks in §6. |
-| 2 Tabs | ⏭ **Next** (after your Phase 1 checks) | See plan "Phase 2" |
-| 2.5 Ad blocking (uBO Lite) | Not started | New phase, decided 2026-11-26. See plan "Phase 2.5" |
+| 2 Tabs | 🔶 Built | Agent: build, 166 tests, launch with 2 startup tabs + script popup blocked. **You:** the manual checks in §6. |
+| 2.5 Ad blocking (uBO Lite) | ⏭ **Next** | New phase, decided 2026-11-26. See plan "Phase 2.5" |
 | 3–10 | Not started | Phase 8 is now the optional adblock-rust upgrade |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
@@ -116,25 +121,30 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation (113
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: check Phase 1, then Phase 2 (tabs)
+## 6. Next task: check Phases 1 and 2, then Phase 2.5 (ad blocking)
 
-**Your manual checks for Phase 1** (F5 in Visual Studio, Debug):
-1. Type `example.com`, then Enter: the page loads, the window title shows "Example Domain", the address bar shows `example.com`.
-2. Type `best wpf tutorials`: Bing search results. Type `c#`: a search, not a site.
-3. Click the address bar: the whole URL is selected and shows `https://…`. Type something, press Esc: it reverts.
-4. Click a few links, then Back/Forward. Back is greyed out on the first page.
-5. Reload. During a slow load the Reload icon turns into ✕ (Stop); press it.
-6. Type `http://nonexistent.invalid`: the "Can't find this site" panel with **Try again**. Turn Wi-Fi off and reload a page: an error panel. Turn it back on, then Try again.
-7. Crash test: in Task Manager, end a `msedgewebview2.exe` process with "renderer" in its command line (add the column "Command line"), and check you get the "This page crashed" panel. Ending the main `msedgewebview2.exe` process (the one with no `--type=`) should recover by itself and reload the page.
-8. ⋯ menu, then Theme Dark/Light: the toolbar switches, and sites that support dark mode switch too.
-9. Click a `target=_blank` link: it opens in the same page (Phase 1 behaviour until tabs exist).
+**Phase 1 checks** (not reported yet): address bar (`example.com`, `best wpf tutorials`, `c#`), click-to-select-all and Esc, Back/Forward, Reload/Stop, `http://nonexistent.invalid` → error panel with Try again, Wi-Fi off → error panel, ending a `msedgewebview2.exe` renderer in Task Manager → crash panel, theme switch.
 
-Report anything odd, and the agent will fix it before Phase 2.
+**Phase 2 checks** (F5, Debug):
+1. **Tabs:** Ctrl+T opens a tab with the address bar focused. Open about 10 tabs: they shrink. Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+1…8, Ctrl+9 switch. Ctrl+W, the tab's ✕ and middle-click close; the right neighbour becomes active. Ctrl+Shift+T brings the last closed tab back in its old place. Closing the last tab closes the window.
+2. **Shortcuts while the page has focus (V7):** click inside a page first, then try Ctrl+T, Ctrl+W, Ctrl+L, Alt+D, F6, F5, Alt+Left/Right, Ctrl+Tab. Each should work exactly once (for example F5 reloads once; Ctrl+W doesn't close two tabs).
+3. **Links and popups:** a `target=_blank` link opens a new tab next to the current one. Right-click a link → **Open link in new tab** opens it in the background. A site's "Sign in with Google/Microsoft" popup opens as a tab, works, and closes itself when done.
+4. **Blocked popups:** on a site that opens popups by itself, a blue icon appears next to ⋯; its menu opens the blocked address in a new tab.
+5. **Favicons and spinner:** tabs show site icons; a spinner while loading; a globe when the site has no icon.
+6. **Find (V8):** Ctrl+F opens the find bar; type a word that appears 3 times → "1/3"; Enter / Shift+Enter move; Esc closes. **Tell the agent if the first match shows "0/3"** (the counter assumes WebView2 counts from 1).
+7. **Zoom:** Ctrl+Plus / Ctrl+Minus / Ctrl+0 and Ctrl+mouse wheel; the "110%" button appears and resets on click.
+8. **Fullscreen:** play a YouTube video fullscreen → tab strip and toolbar disappear, Esc restores. F11 toggles app fullscreen.
+9. **Print:** Ctrl+P shows the print preview.
+10. **Command line:** `AJBrowser.exe example.com C:\path\to\page.html` opens two tabs.
 
-**Phase 2 in short** (full checklist: plan, Phase 2): a tab strip with favicons, new-window handling into real tabs (with our own popup blocker), reopen closed tab, keyboard shortcuts, find, zoom, fullscreen, the context menu "Open link in new tab".
+Known Phase 2 limits: middle-click / Ctrl+click on links open the tab in front (WebView2 doesn't say which button was used); beyond about 20 tabs (at 1280 px) the extra tabs are clipped (use Ctrl+Tab); tabs can't be dragged yet (Phase 9).
+
+Report anything odd, and the agent will fix it before Phase 2.5.
+
+**Phase 2.5 in short** (plan "Phase 2.5"): enable extensions in the normal browser, bundle uBlock Origin Lite, install it automatically, add an ad-blocking on/off switch.
 
 **Suggested prompt on the new PC:**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 2.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 2.5.
 
 ## 7. uBlock Origin Lite test (V5): done
 

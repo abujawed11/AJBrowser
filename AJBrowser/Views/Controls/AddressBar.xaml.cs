@@ -19,6 +19,19 @@ public partial class AddressBar : UserControl
 
     private TabViewModel? Tab => DataContext as TabViewModel;
 
+    /// <summary>Ctrl+L / Alt+D / F6 and new tabs: put the caret here with everything selected.</summary>
+    public void FocusAndSelectAll()
+    {
+        if (AddressBox.IsKeyboardFocusWithin)
+        {
+            AddressBox.SelectAll();
+        }
+        else
+        {
+            AddressBox.Focus(); // GotKeyboardFocus selects everything
+        }
+    }
+
     private void AddressBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         // The first click should select everything, not place the caret. Later clicks behave normally.

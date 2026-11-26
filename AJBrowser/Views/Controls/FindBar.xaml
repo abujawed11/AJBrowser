@@ -1,0 +1,42 @@
+<UserControl x:Class="AJBrowser.Views.Controls.FindBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AJBrowser.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:TabViewModel, IsDesignTimeCreatable=False}"
+             d:DesignWidth="800">
+    <!--
+        DataContext: the selected TabViewModel. Docked between the toolbar and the page (not over it),
+        because WPF can't draw on top of a WebView2.
+    -->
+    <Border Background="{DynamicResource ChromeBackgroundBrush}"
+            BorderBrush="{DynamicResource ChromeBorderBrush}"
+            BorderThickness="0,0,0,1"
+            Padding="8,4">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <TextBox x:Name="FindBox"
+                     Width="260"
+                     Height="32"
+                     VerticalContentAlignment="Center"
+                     Text="{Binding FindText, UpdateSourceTrigger=PropertyChanged}"
+                     PreviewKeyDown="FindBox_PreviewKeyDown"
+                     AutomationProperties.Name="Find in page" />
+            <TextBlock Text="{Binding FindStatusText}"
+                       MinWidth="80"
+                       Margin="10,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+            <Button Content="&#xE70E;" Command="{Binding FindPreviousCommand}"
+                    Style="{StaticResource ToolbarButtonStyle}"
+                    ToolTip="Previous match (Shift+Enter)" AutomationProperties.Name="Previous match" />
+            <Button Content="&#xE70D;" Command="{Binding FindNextCommand}"
+                    Style="{StaticResource ToolbarButtonStyle}"
+                    ToolTip="Next match (Enter)" AutomationProperties.Name="Next match" />
+            <Button Content="&#xE711;" Command="{Binding CloseFindCommand}"
+                    Style="{StaticResource ToolbarButtonStyle}"
+                    ToolTip="Close (Esc)" AutomationProperties.Name="Close find bar" />
+        </StackPanel>
+    </Border>
+</UserControl>

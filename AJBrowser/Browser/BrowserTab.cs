@@ -1,6 +1,10 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using AJBrowser.Core.Logging;
+using AJBrowser.Core.Navigation;
 using AJBrowser.Core.Security;
 using AJBrowser.Services;
 using Microsoft.Web.WebView2.Core;
@@ -10,8 +14,8 @@ namespace AJBrowser.Browser;
 
 /// <summary>
 /// One browser page: wraps a WebView2 control and turns its events into plain C# state and events.
-/// This (with <see cref="BrowserEnvironment"/>) is the only code that touches CoreWebView2; view models
-/// use the properties, methods and events here instead.
+/// This (with <see cref="BrowserEnvironment"/> and <see cref="PopupRequest"/>) is the only code that touches
+/// CoreWebView2; view models use the properties, methods and events here instead.
 /// <para>
 /// The WebView2 control lives inside <see cref="View"/>, a container that stays the same even when the
 /// control itself is replaced after a browser-process crash.
@@ -21,6 +25,9 @@ public sealed class BrowserTab : IDisposable
 {
     /// <summary>Recovering more often than this means something is badly wrong; ask the user instead of looping.</summary>
     private static readonly TimeSpan MinimumTimeBetweenAutoRecoveries = TimeSpan.FromSeconds(30);
+
+    /// <summary>Internal name of WebView2's default "Open link in new window" context-menu item.</summary>
+    private const string OpenLinkInNewWindowItemName = "openLinkInNewWindow";
 
     private readonly BrowserEnvironment _environment;
     private readonly ThemeService _theme;
@@ -34,6 +41,7 @@ public sealed class BrowserTab : IDisposable
     private ulong _currentNavigationId;
     private Uri? _currentNavigationUri;
     private DateTime _lastAutoRecoveryUtc = DateTime.MinValue;
+    private int _faviconVersion;
     private bool _disposed;
 
     public BrowserTab(BrowserEnvironment environment, ThemeService theme, AppLogger log)
@@ -50,9 +58,22 @@ public sealed class BrowserTab : IDisposable
     public bool IsReady => _core is not null;
     public string? Url { get; private set; }
     public string Title { get; private set; } = string.Empty;
+    public ImageSource? Favicon { get; private set; }
     public bool IsLoading { get; private set; }
     public bool CanGoBack { get; private set; }
     public bool CanGoForward { get; private set; }
+
+    /// <summary>The page has an element in HTML5 fullscreen (for example a video player).</summary>
+    public bool IsPageFullScreen { get; private set; }
+
+    public double ZoomFactor { get; private set; } = ZoomLevels.Default;
+
+    /// <summary>Find-in-page results: number of matches, and the 1-based active match (-1 if not known).</summary>
+    public int FindMatchCount { get; private set; }
+    public int FindActiveMatch { get; private set; } = -1;
+
+    /// <summary>For <see cref="PopupRequest"/> only: the live CoreWebView2 to hand to WebView2 as a new window.</summary>
+    internal CoreWebView2? Core => _core;
 
     /// <summary>Raised when any of the state properties above changed.</summary>
     public event EventHandler? StateChanged;
@@ -62,6 +83,18 @@ public sealed class BrowserTab : IDisposable
 
     /// <summary>Something the user must see instead of the page (error, crash, engine failure).</summary>
     public event EventHandler<PageProblem>? ProblemOccurred;
+
+    /// <summary>The user caused the page to open a new window: open it as a tab. Must be answered (see <see cref="PopupRequest"/>).</summary>
+    public event EventHandler<PopupRequest>? PopupRequested;
+
+    /// <summary>A popup the user didn't cause was blocked (WebView2 doesn't block them itself; spike F10). The URL may be null.</summary>
+    public event EventHandler<Uri?>? PopupBlocked;
+
+    /// <summary>"Open link in new tab" was chosen in the context menu.</summary>
+    public event EventHandler<Uri>? OpenInNewTabRequested;
+
+    /// <summary>The page called window.close() (for example a sign-in popup that finished).</summary>
+    public event EventHandler? CloseRequested;
 
     /// <summary>Creates the WebView2 control. Problems are reported through <see cref="ProblemOccurred"/>, never thrown.</summary>
     public Task InitializeAsync() => StartEngineAsync(recreateEnvironment: false);
@@ -107,6 +140,57 @@ public sealed class BrowserTab : IDisposable
     public void Reload() => _core?.Reload();
 
     public void Stop() => _core?.Stop();
+
+    public void Print() => _core?.ShowPrintUI(CoreWebView2PrintDialogKind.Browser);
+
+    public void SetZoom(double zoomFactor)
+    {
+        if (_webView is not null)
+        {
+            _webView.ZoomFactor = zoomFactor; // raises ZoomFactorChanged, which updates ZoomFactor
+        }
+    }
+
+    /// <summary>Starts (or restarts) find-in-page. WebView2's own find bar is suppressed; AJBrowser shows its own.</summary>
+    public async Task FindAsync(string term)
+    {
+        if (_core is null || _attachedEnvironment is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrEmpty(term))
+        {
+            StopFind();
+            return;
+        }
+
+        var options = _attachedEnvironment.CreateFindOptions();
+        options.FindTerm = term;
+        options.SuppressDefaultFindDialog = true;
+        options.ShouldHighlightAllMatches = true;
+
+        try
+        {
+            await _core.Find.StartAsync(options);
+        }
+        catch (Exception ex)
+        {
+            _log.Debug($"Find failed: {ex.GetType().Name}");
+        }
+    }
+
+    public void FindNext() => _core?.Find.FindNext();
+
+    public void FindPrevious() => _core?.Find.FindPrevious();
+
+    public void StopFind()
+    {
+        _core?.Find.Stop();
+        FindMatchCount = 0;
+        FindActiveMatch = -1;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>Moves keyboard focus into the page (for example after pressing Enter in the address bar).</summary>
     public void FocusPage() => _webView?.Focus();
@@ -157,13 +241,15 @@ public sealed class BrowserTab : IDisposable
 
     private async Task AttachNewWebViewAsync(CoreWebView2Environment environment)
     {
-        var webView = new WebView2 { DefaultBackgroundColor = BackgroundFor(_theme.IsDark) };
+        // White, like Chrome: pages that don't paint a background (plain HTML, many docs) assume white behind
+        // their default black text. A dark colour here made such pages unreadable in dark mode.
+        var webView = new WebView2 { DefaultBackgroundColor = System.Drawing.Color.White };
         _host.Children.Add(webView);
         _webView = webView;
 
         try
         {
-            // Completes once the control has a window handle, i.e. once it is visible in the window.
+            // Completes once the control has a window handle (once it is part of the window's visual tree).
             await webView.EnsureCoreWebView2Async(environment, _environment.CreateControllerOptions(environment));
         }
         catch
@@ -183,7 +269,7 @@ public sealed class BrowserTab : IDisposable
 
         _attachedEnvironment = environment;
         _core = webView.CoreWebView2;
-        Configure(_core);
+        Configure(webView, _core);
 
         if (_pendingNavigation is { } target)
         {
@@ -193,16 +279,16 @@ public sealed class BrowserTab : IDisposable
     }
 
     /// <summary>
-    /// ALL per-WebView setup goes here, and only here. WebViews created for popups (Phase 2) or after a
-    /// crash don't inherit anything from other WebViews (spike F10), so every WebView must pass through this.
+    /// ALL per-WebView setup goes here, and only here. WebViews created for popups or after a crash don't
+    /// inherit anything from other WebViews (spike F10), so every WebView must pass through this.
     /// </summary>
-    private void Configure(CoreWebView2 core)
+    private void Configure(WebView2 webView, CoreWebView2 core)
     {
         var settings = core.Settings;
 #if !DEBUG
         settings.AreDevToolsEnabled = false; // F12 DevTools stay available in Debug builds.
 #endif
-        settings.IsStatusBarEnabled = true;
+        settings.IsStatusBarEnabled = true; // WebView2's own link-hover bubble (bottom-left) is all we need.
 
         core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Balanced; // Strict becomes a setting later (spike F8).
         ApplyColorScheme(core);
@@ -212,9 +298,17 @@ public sealed class BrowserTab : IDisposable
         core.SourceChanged += OnSourceChanged;
         core.HistoryChanged += OnHistoryChanged;
         core.DocumentTitleChanged += OnDocumentTitleChanged;
+        core.FaviconChanged += OnFaviconChanged;
+        core.ContainsFullScreenElementChanged += OnContainsFullScreenElementChanged;
         core.ProcessFailed += OnProcessFailed;
         core.NewWindowRequested += OnNewWindowRequested;
+        core.WindowCloseRequested += OnWindowCloseRequested;
+        core.ContextMenuRequested += OnContextMenuRequested;
+        core.Find.MatchCountChanged += OnFindResultsChanged;
+        core.Find.ActiveMatchIndexChanged += OnFindResultsChanged;
+        webView.ZoomFactorChanged += OnZoomFactorChanged;
 
+        ZoomFactor = webView.ZoomFactor;
         UpdateState(core);
     }
 
@@ -229,8 +323,14 @@ public sealed class BrowserTab : IDisposable
                 _core.SourceChanged -= OnSourceChanged;
                 _core.HistoryChanged -= OnHistoryChanged;
                 _core.DocumentTitleChanged -= OnDocumentTitleChanged;
+                _core.FaviconChanged -= OnFaviconChanged;
+                _core.ContainsFullScreenElementChanged -= OnContainsFullScreenElementChanged;
                 _core.ProcessFailed -= OnProcessFailed;
                 _core.NewWindowRequested -= OnNewWindowRequested;
+                _core.WindowCloseRequested -= OnWindowCloseRequested;
+                _core.ContextMenuRequested -= OnContextMenuRequested;
+                _core.Find.MatchCountChanged -= OnFindResultsChanged;
+                _core.Find.ActiveMatchIndexChanged -= OnFindResultsChanged;
             }
             catch (Exception ex)
             {
@@ -243,6 +343,7 @@ public sealed class BrowserTab : IDisposable
 
         if (_webView is not null)
         {
+            _webView.ZoomFactorChanged -= OnZoomFactorChanged;
             _host.Children.Remove(_webView);
             try
             {
@@ -257,14 +358,15 @@ public sealed class BrowserTab : IDisposable
         }
 
         _attachedEnvironment = null;
-        if (IsLoading)
+        if (IsLoading || IsPageFullScreen)
         {
             IsLoading = false;
+            IsPageFullScreen = false;
             StateChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
-    // ---------------------------------------------------------------- WebView2 events
+    // ---------------------------------------------------------------- navigation events
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
@@ -305,6 +407,110 @@ public sealed class BrowserTab : IDisposable
     private void OnHistoryChanged(object? sender, object e) => UpdateState((CoreWebView2)sender!);
 
     private void OnDocumentTitleChanged(object? sender, object e) => UpdateState((CoreWebView2)sender!);
+
+    // ---------------------------------------------------------------- page events
+
+    private async void OnFaviconChanged(object? sender, object e)
+    {
+        // async void is fine for an event handler as long as nothing can escape: everything is caught below.
+        var core = (CoreWebView2)sender!;
+        var version = ++_faviconVersion;
+        ImageSource? icon = null;
+
+        try
+        {
+            if (!string.IsNullOrEmpty(core.FaviconUri))
+            {
+                using var stream = await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
+                icon = stream is null ? null : LoadImage(stream);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Debug($"Favicon could not be loaded: {ex.GetType().Name}");
+        }
+
+        // Ignore results that arrive after a newer favicon change or after the WebView was replaced.
+        if (version != _faviconVersion || !ReferenceEquals(core, _core))
+        {
+            return;
+        }
+
+        Favicon = icon;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnContainsFullScreenElementChanged(object? sender, object e)
+    {
+        IsPageFullScreen = ((CoreWebView2)sender!).ContainsFullScreenElement;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnZoomFactorChanged(object? sender, EventArgs e)
+    {
+        ZoomFactor = ((WebView2)sender!).ZoomFactor;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnFindResultsChanged(object? sender, object e)
+    {
+        var find = (CoreWebView2Find)sender!;
+        FindMatchCount = find.MatchCount;
+        FindActiveMatch = find.ActiveMatchIndex;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        var target = Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ? uri : null;
+
+        // WebView2 doesn't block popups the user didn't cause (spike F10); IsUserInitiated is reliable (F14).
+        if (!e.IsUserInitiated || PopupRequested is null)
+        {
+            e.Handled = true; // cancelled: no window opens, window.open() returns null in the page
+            _log.Info($"Blocked a popup (user-initiated: {e.IsUserInitiated}) to {Redactor.Url(target)}");
+            PopupBlocked?.Invoke(this, target);
+            return;
+        }
+
+        // Never let WebView2 open its own window: it would skip Configure() (spike F10). The deferral makes
+        // WebView2 wait until the new tab's WebView is ready to be handed over.
+        PopupRequested.Invoke(this, new PopupRequest(e, e.GetDeferral(), target));
+    }
+
+    private void OnWindowCloseRequested(object? sender, object e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnContextMenuRequested(object? sender, CoreWebView2ContextMenuRequestedEventArgs e)
+    {
+        var items = e.MenuItems;
+
+        // WebView2's "Open link in new window" would open a tab anyway; replace it with clear tab wording.
+        var insertAt = 0;
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (items[i].Name == OpenLinkInNewWindowItemName)
+            {
+                items.RemoveAt(i);
+                insertAt = i;
+                break;
+            }
+        }
+
+        var target = e.ContextMenuTarget;
+        if (_attachedEnvironment is null
+            || !target.HasLinkUri
+            || !Uri.TryCreate(target.LinkUri, UriKind.Absolute, out var link)
+            || (link.Scheme != Uri.UriSchemeHttps && link.Scheme != Uri.UriSchemeHttp))
+        {
+            return;
+        }
+
+        var item = _attachedEnvironment.CreateContextMenuItem("Open link in new tab", null, CoreWebView2ContextMenuItemKind.Command);
+        item.CustomItemSelected += (_, _) => OpenInNewTabRequested?.Invoke(this, link);
+        items.Insert(insertAt, item);
+    }
+
+    // ---------------------------------------------------------------- crashes
 
     private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
     {
@@ -352,26 +558,6 @@ public sealed class BrowserTab : IDisposable
         _ = RestartEngineAsync();
     }
 
-    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
-    {
-        // Never let WebView2 open its own window: it would skip Configure() (spike F10).
-        // Phase 1 has no tabs, so links that open a new window load in this page instead, and script
-        // popups the user didn't click are blocked (WebView2 doesn't block them; spike F10/F14).
-        // Phase 2 replaces this with real tabs and window.opener support.
-        e.Handled = true;
-
-        if (e.IsUserInitiated
-            && Uri.TryCreate(e.Uri, UriKind.Absolute, out var target)
-            && (target.Scheme == Uri.UriSchemeHttps || target.Scheme == Uri.UriSchemeHttp))
-        {
-            Navigate(target);
-        }
-        else
-        {
-            _log.Info($"Blocked a new window (user-initiated: {e.IsUserInitiated}) to {Redactor.Url(e.Uri)}");
-        }
-    }
-
     // ---------------------------------------------------------------- state and theme
 
     private void UpdateState(CoreWebView2 core)
@@ -385,11 +571,6 @@ public sealed class BrowserTab : IDisposable
 
     private void OnThemeChanged(object? sender, EventArgs e)
     {
-        if (_webView is not null)
-        {
-            _webView.DefaultBackgroundColor = BackgroundFor(_theme.IsDark);
-        }
-
         if (_core is not null)
         {
             ApplyColorScheme(_core);
@@ -405,7 +586,20 @@ public sealed class BrowserTab : IDisposable
             _ => CoreWebView2PreferredColorScheme.Auto, // follows Windows, same as our System theme
         };
 
-    /// <summary>Shown before a page paints; matches ContentBackgroundBrush to avoid a white flash in dark mode.</summary>
-    private static System.Drawing.Color BackgroundFor(bool dark) =>
-        dark ? System.Drawing.Color.FromArgb(0x1C, 0x1C, 0x1C) : System.Drawing.Color.White;
+    /// <summary>Decodes a favicon into a frozen (thread-safe, immutable) image small enough for a tab.</summary>
+    private static BitmapImage LoadImage(Stream source)
+    {
+        var buffer = new MemoryStream();
+        source.CopyTo(buffer);
+        buffer.Position = 0;
+
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.DecodePixelWidth = 32;
+        image.StreamSource = buffer;
+        image.EndInit();
+        image.Freeze();
+        return image;
+    }
 }

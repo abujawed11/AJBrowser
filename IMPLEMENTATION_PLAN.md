@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phase 1 implemented, awaiting your manual checks · next: Phase 2, then the new Phase 2.5 (ad blocking with uBO Lite)
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1 and 2 implemented, awaiting your manual checks · next: Phase 2.5 (ad blocking with uBO Lite)
 
 ---
 
@@ -434,7 +434,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [x] Set `PreferredTrackingPreventionLevel = Balanced` (Strict as a later setting).
 - [x] Set `PreferredColorScheme` to follow the app theme (also `DefaultBackgroundColor`, to avoid a white flash in dark mode).
 - [x] DevTools disabled **only in Release** (kept in Debug). Default context menu kept: it provides copy/paste and other basics.
-- [x] *Interim (until Phase 2 tabs):* `NewWindowRequested` is always handled by us. A user-clicked `target=_blank` link loads in the same page; script popups are blocked. OAuth popups that need `window.opener` won't work until Phase 2.
+- [x] *Interim (until Phase 2 tabs):* `NewWindowRequested` is always handled by us. A user-clicked `target=_blank` link loads in the same page; script popups are blocked. *Replaced in Phase 2 by real popup tabs.*
 
 **Implementation notes (2026-11-26):** the agent built the solution (0 warnings, 0 errors), ran 113 passing tests (41 old + 72 new), and launched the Debug exe: the window showed the new toolbar, loaded the Bing home page (title "Search - Microsoft Bing - AJBrowser", address bar "www.bing.com"), and closed cleanly. The log showed the runtime check and environment creation. **Not yet checked by a person:** typing in the address bar, search, Back/Forward, Reload/Stop, the error panel, crash recovery, theme switching of pages. See the manual verification list below.
 
@@ -454,23 +454,25 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 **Depends on:** Phase 1.
 
 **Checklist**
-- [ ] `ObservableCollection<TabViewModel>` + `SelectedTab`. Each tab owns its `BrowserTab`.
-- [ ] Content host: all tab WebViews live in one `Grid`, and only the active one is `Visible` (preserves page state). Dispose the WebView on close.
-- [ ] Tab strip control: favicon, title (ellipsis, tooltip), close button, loading spinner, middle-click to close, "+" button, horizontal overflow (scroll or shrink). Drag-to-reorder is deferred to Phase 9.
-- [ ] Favicons via `FaviconChanged` → `GetFaviconAsync(PNG)` → `BitmapImage` (frozen), with a fallback icon.
-- [ ] `NewWindowRequested`: take a deferral, create a tab next to the opener, `args.NewWindow = newTab.CoreWebView2`, complete. Respect `args.IsUserInitiated` (block non-user popups with an indicator). **WebView2 does not block them for us** (spike F10). Run the same `BrowserTab` initialisation on the new WebView before assigning `NewWindow`. Popup windows with `WindowFeatures` may open as tabs for now.
-- [ ] Closed-tab stack (URL, title, index; last 25). `Ctrl+Shift+T` reopens.
-- [ ] Keyboard shortcuts: `Ctrl+T`, `Ctrl+W`, `Ctrl+Shift+T`, `Ctrl+Tab`/`Ctrl+Shift+Tab`, `Ctrl+1…8`, `Ctrl+9` (last), `Ctrl+L`/`Alt+D`/`F6` (focus address bar), `Alt+←/→`, `F5`/`Ctrl+R`, `Esc` (stop), `Ctrl+F`, `Ctrl+±/0` (zoom), `F11`, `Ctrl+P`. Shortcuts pressed while the WebView2 has focus arrive through the WPF control's key events / `AcceleratorKeyPressed`. **Verify which keys WebView2 consumes** (§10).
-- [ ] Find in page: use WebView2's Find API if available in the installed SDK (verify), else defer.
-- [ ] Zoom per tab (`ZoomFactor`). Persisting it per site is deferred.
-- [ ] HTML5 fullscreen: `ContainsFullScreenElementChanged` → hide chrome, `WindowState=Maximized`, `WindowStyle=None`, and restore on exit. F11 toggles app fullscreen.
-- [ ] Context menu (`ContextMenuRequested`): add "Open link in new tab". Keep the defaults otherwise.
-- [ ] Permission requests (`PermissionRequested`): use the default WebView2 prompt for now; a custom prompt and per-site memory come later.
-- [ ] Status text on link hover (`StatusBarTextChanged`) in a small bottom-left overlay (a `Popup`, to avoid airspace).
-- [ ] Last tab closed → close the window (or open a new blank tab, configurable later).
-- [ ] Open `.html`/URLs passed on the command line (later default-browser registration, see §9).
+- [x] `ObservableCollection<TabViewModel>` + `SelectedTab`. Each tab owns its `BrowserTab`.
+- [x] Content host: all tab WebViews live in one `Grid` (an `ItemsControl` with a `Grid` panel), and only the selected one is `Visible` (preserves page state). The WebView is disposed on close.
+- [x] Tab strip control: favicon, title (ellipsis, tooltip), close button, loading spinner, middle-click to close, "+" button. Overflow: tabs shrink from 240 to 60 px (`ShrinkingTabPanel`); beyond that they're clipped but still reachable with Ctrl+Tab / Ctrl+1…9. Drag-to-reorder is deferred to Phase 9.
+- [x] Favicons via `FaviconChanged` → `GetFaviconAsync(PNG)` → `BitmapImage` (frozen), with a globe fallback icon.
+- [x] `NewWindowRequested`: take a deferral, create a tab next to the opener, `args.NewWindow = newTab.CoreWebView2`, complete. Respect `args.IsUserInitiated` (block non-user popups with an indicator). **WebView2 does not block them for us** (spike F10). Run the same `BrowserTab` initialisation on the new WebView before assigning `NewWindow`. Popup windows with `WindowFeatures` may open as tabs for now. *Implemented with `PopupRequest`; blocked popups show a toolbar icon whose menu opens them as normal tabs (without `window.opener`). `window.close()` closes the tab.*
+- [x] Closed-tab stack (URL, title, index; last 25). `Ctrl+Shift+T` reopens at the old position.
+- [x] Keyboard shortcuts: `Ctrl+T`, `Ctrl+W`, `Ctrl+Shift+T`, `Ctrl+Tab`/`Ctrl+Shift+Tab`, `Ctrl+1…8`, `Ctrl+9` (last), `Ctrl+L`/`Alt+D`/`F6` (focus address bar), `Alt+←/→`, `F5`/`Ctrl+R`, `Esc` (stop), `Ctrl+F`, `Ctrl+±/0` (zoom), `F11`, `Ctrl+P`. Shortcuts pressed while the WebView2 has focus arrive through the WPF control's key events / `AcceleratorKeyPressed`. **Verify which keys WebView2 consumes** (§10). *Implemented in `MainWindow.Window_PreviewKeyDown` (also Ctrl+PageUp/PageDown, Ctrl+F4, Alt+Home, F3/Shift+F3, browser media keys). V7 still needs your manual check.*
+- [x] Find in page: WebView2's Find API (available, V8) with WebView2's own find dialog suppressed and **our own find bar** docked above the page (match counter, previous/next, Enter/Shift+Enter/Esc, F3).
+- [x] Zoom per tab (`ZoomFactor`) with Chrome's zoom steps (`ZoomLevels`), a "125%" indicator that resets on click, and ⋯ menu items. Persisting it per site is deferred.
+- [x] HTML5 fullscreen: `ContainsFullScreenElementChanged` → hide chrome, `WindowState=Maximized`, `WindowStyle=None`, and restore on exit. F11 toggles app fullscreen.
+- [x] Context menu (`ContextMenuRequested`): "Open link in new tab" (background tab) replaces WebView2's "Open link in new window". Defaults kept otherwise.
+- [x] Permission requests (`PermissionRequested`): the default WebView2 prompt is used (no code needed); a custom prompt and per-site memory come later.
+- [x] Status text on link hover: **kept WebView2's built-in status bubble** (`IsStatusBarEnabled`), which already draws bottom-left inside the page. No custom `Popup` needed (§12).
+- [x] Last tab closed → close the window (configurable later).
+- [x] Open `.html`/URLs passed on the command line (`CommandLineUrls`; options starting with "-" are ignored). Later default-browser registration, see §9.
 
-**Files:** `Views/Controls/TabStrip.xaml`, `ViewModels/MainWindowViewModel.cs`, `ViewModels/TabViewModel.cs`, `Browser/BrowserTab.cs`, `Services/ShortcutService.cs` (or `InputBindings` in XAML).
+**Implementation notes (2026-11-26):** the agent built the solution (0 warnings, 0 errors) and ran 166 passing tests (53 new: tab selection, closed-tab stack, zoom steps, find counter, command-line URLs). It launched the Debug exe with a local test page and `example.com` as arguments: two tabs opened, the page's script popup was **blocked** (log line + toolbar indicator), the fallback globe icons and titles showed, and the app exited cleanly. One early launch showed a single Bing tab instead; it didn't happen again in 4 further launches (most likely keystrokes reached the window while the test script had brought it to the front). **Fixed along the way:** the WebView's default background is now always white; the dark colour from Phase 1 made pages without their own background unreadable (black text on dark). **Not yet checked by a person:** clicking popups and `target=_blank` links, sign-in popups, middle-click, shortcuts while the page has focus (V7), find counter numbering (V8), fullscreen video, zoom, print, context menu.
+
+**Files:** `Views/Controls/TabStrip.xaml`, `Views/Controls/ShrinkingTabPanel.cs`, `Views/Controls/FindBar.xaml`, `Views/MainWindow.xaml(.cs)` (shortcuts, fullscreen), `ViewModels/MainWindowViewModel.cs`, `ViewModels/TabViewModel.cs`, `Browser/BrowserTab.cs`, `Browser/PopupRequest.cs`, `Core/Tabs/*`, `Core/Navigation/{ZoomLevels,FindStatus,CommandLineUrls}.cs`.
 **Packages:** none.
 **Risks / edge cases:** memory with many tabs (suspend background tabs later); focus juggling between WPF and the WebView2 HWND; disposal races (events firing after close, so unsubscribe and null-check); `NewWindowRequested` must assign `NewWindow` before navigation starts; popups that call `window.close()` (`WindowCloseRequested` → close the tab).
 **Manual verification:** open 10 tabs and switch with the mouse and `Ctrl+Tab`. Close the middle tab → the correct neighbour becomes active. `Ctrl+Shift+T` restores it. Middle-click a link → new tab. "Sign in with Google" on a site → the popup works and closes itself. YouTube video fullscreen works. `Ctrl+L` while the page has focus focuses the address bar. Zoom in/out/reset.
@@ -746,6 +748,8 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [ ] Per-site zoom and permission memory UI.
 - [ ] Password manager integration (WebView2 autofill settings exist, but UI parity is limited).
 - [ ] Tab tear-off and multi-window drag.
+- [ ] Middle-click / Ctrl+click on a link opening a **background** tab. WebView2 reports these as ordinary user-initiated new windows, so they currently open in front.
+- [ ] Scrollable tab strip (scroll buttons or wheel) when tabs reach their minimum width; they're clipped for now.
 - [ ] Default-browser registration.
 - [ ] ARM64 build.
 - [ ] Sync (out of scope for a solo project unless a backend is chosen).
@@ -764,8 +768,8 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 | V5 | Can an MV3 blocker (uBO Lite) run in WebView2 via `AddBrowserExtensionAsync`, and how well? | Spike | ☑ Yes; it blocked YouTube video ads in Optimal mode (F15) |
 | V6 | Does `NewWindowRequested` + `args.NewWindow` keep `window.opener` for OAuth popups? | Spike | ☑ Yes (F10) |
 | V13 | Does `CookieManager.GetCookiesAsync` return HttpOnly cookies for a signed-in site? | Spike | ☑ Yes (F13) |
-| V7 | Which keys does WebView2 consume vs. forward to WPF (`Ctrl+L`, `Ctrl+T`, `Ctrl+W`, `F5`, …)? Should we set `AreBrowserAcceleratorKeysEnabled`? | Phase 2 | ☐ |
-| V8 | Is the WebView2 Find API available and stable in SDK 1.0.4370.26? | Phase 2 | ☐ |
+| V7 | Which keys does WebView2 consume vs. forward to WPF (`Ctrl+L`, `Ctrl+T`, `Ctrl+W`, `F5`, …)? Should we set `AreBrowserAcceleratorKeysEnabled`? | Phase 2 | ◐ Implemented assuming the WPF control forwards accelerator keys as `PreviewKeyDown` (and handling them stops WebView2's own action); `AreBrowserAcceleratorKeysEnabled` left on. **Your manual check pending.** |
+| V8 | Is the WebView2 Find API available and stable in SDK 1.0.4370.26? | Phase 2 | ◐ Available (`CoreWebView2.Find`, `StartAsync`, `FindNext/Previous`, `MatchCount`, `ActiveMatchIndex`; checked by reflection). Still to verify by hand: whether `ActiveMatchIndex` is 1-based (the counter assumes it is). |
 | V9 | How stable is the in-box WPF Fluent `ThemeMode` in .NET 10 for our controls? | Phase 0 | ◐ Builds and runs; visual check of Light/Dark/System pending |
 | V10 | Velopack's current status and fit (self-contained WPF, per-user install, updates) | Phase 10 | ☐ |
 | V11 | Is the ICoreWebView2_22 three-parameter filter available in the installed SDK and runtime? | Spike | ☑ Yes; ServiceWorker requests were intercepted (F7) |
@@ -817,6 +821,10 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | 2026-11-26 | Address input: typed `file://`, `data:`, `about:` allowed; `javascript:`/`vbscript:` blocked; text with spaces is always a search; bare hosts use https, localhost/IPs/single-word-with-port use http | Matches mainstream browsers; no Public Suffix List needed yet |
 | 2026-11-26 | Error panel only for network-level failures with no HTTP response | A site's own 404/500 page is more useful; cert errors keep WebView2's own page; avoids false error panels for Stop and downloads |
 | 2026-11-26 | Phase 1 popups: user-clicked new windows open in the same page, script popups are blocked | No tabs yet, and WebView2-created windows would skip our setup (F10). Replaced in Phase 2 |
+| 2026-11-26 | Phase 2: user-initiated popups become tabs via deferral + `NewWindow` (keeps `window.opener`); non-user popups blocked with a toolbar indicator | WebView2 doesn't block popups (F10); `IsUserInitiated` is reliable (F14) |
+| 2026-11-26 | Own find bar (docked above the page) instead of WebView2's find dialog | Works when focus is in our UI, matches the app theme, and avoids depending on WebView2's dialog behaviour |
+| 2026-11-26 | Keep WebView2's built-in link-hover status bubble and permission prompts | They already do what the plan asked; a custom `Popup` would add airspace/positioning bugs for no gain |
+| 2026-11-26 | WebView `DefaultBackgroundColor` is always white | Chrome's behaviour: pages without their own background assume white; a dark default made them unreadable in dark mode (found in Phase 2 testing) |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---

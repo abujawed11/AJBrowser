@@ -8,14 +8,15 @@
         xmlns:controls="clr-namespace:AJBrowser.Views.Controls"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainWindowViewModel, IsDesignTimeCreatable=False}"
-        Title="{Binding ActiveTab.WindowTitle}"
+        Title="{Binding SelectedTab.WindowTitle, FallbackValue=AJBrowser, TargetNullValue=AJBrowser}"
         Width="1280" Height="800"
         MinWidth="640" MinHeight="400"
         WindowStartupLocation="CenterScreen"
         FontFamily="{StaticResource UiFontFamily}"
         FontSize="{StaticResource BodyFontSize}"
         Background="{DynamicResource AppBackgroundBrush}"
-        Foreground="{DynamicResource TextPrimaryBrush}">
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
@@ -24,36 +25,46 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ============ Toolbar ============ -->
+        <!-- ============ Tab strip ============ -->
         <Border Grid.Row="0"
+                Background="{DynamicResource AppBackgroundBrush}"
+                Visibility="{Binding IsChromeVisible, Converter={StaticResource BoolToVisibility}}">
+            <controls:TabStrip />
+        </Border>
+
+        <!-- ============ Toolbar ============ -->
+        <Border Grid.Row="1"
                 Height="{StaticResource ChromeBarHeight}"
                 Background="{DynamicResource ChromeBackgroundBrush}"
                 BorderBrush="{DynamicResource ChromeBorderBrush}"
-                BorderThickness="0,0,0,1">
+                BorderThickness="0,0,0,1"
+                Visibility="{Binding IsChromeVisible, Converter={StaticResource BoolToVisibility}}">
             <Grid>
                 <DockPanel Margin="6,0" LastChildFill="True">
-                    <!-- Navigation buttons (bound to the active tab). -->
+                    <!-- Navigation buttons (bound to the selected tab). -->
                     <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
-                                DataContext="{Binding ActiveTab}">
+                                DataContext="{Binding SelectedTab}">
                         <Button Content="&#xE72B;" Command="{Binding GoBackCommand}"
                                 Style="{StaticResource ToolbarButtonStyle}"
-                                ToolTip="Back" AutomationProperties.Name="Back" />
+                                ToolTip="Back (Alt+Left)" AutomationProperties.Name="Back" />
                         <Button Content="&#xE72A;" Command="{Binding GoForwardCommand}"
                                 Style="{StaticResource ToolbarButtonStyle}"
-                                ToolTip="Forward" AutomationProperties.Name="Forward" />
+                                ToolTip="Forward (Alt+Right)" AutomationProperties.Name="Forward" />
                         <Button Command="{Binding ReloadOrStopCommand}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
                                     <Setter Property="Content" Value="&#xE72C;" />
-                                    <Setter Property="ToolTip" Value="Reload" />
+                                    <Setter Property="ToolTip" Value="Reload (F5)" />
                                     <Setter Property="AutomationProperties.Name" Value="Reload" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsLoading}" Value="True">
                                             <Setter Property="Content" Value="&#xE711;" />
-                                            <Setter Property="ToolTip" Value="Stop loading" />
+                                            <Setter Property="ToolTip" Value="Stop loading (Esc)" />
                                             <Setter Property="AutomationProperties.Name" Value="Stop loading" />
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -62,19 +73,29 @@
                         </Button>
                         <Button Content="&#xE80F;" Command="{Binding HomeCommand}"
                                 Style="{StaticResource ToolbarButtonStyle}"
-                                ToolTip="Home" AutomationProperties.Name="Home" />
+                                ToolTip="Home (Alt+Home)" AutomationProperties.Name="Home" />
                     </StackPanel>
 
-                    <!-- App menu (theme, data folder, debug tools). A ContextMenu is a popup, so it can open over the page. -->
+                    <!-- App menu (theme, zoom, print, data folder, debug tools). A ContextMenu is a popup, so it can open over the page. -->
                     <Button x:Name="MenuButton" DockPanel.Dock="Right"
                             Content="&#xE712;"
-                            Click="MenuButton_Click"
+                            Click="OpenButtonMenu_Click"
                             Style="{StaticResource ToolbarButtonStyle}"
                             VerticalAlignment="Center"
                             ToolTip="Settings and more" AutomationProperties.Name="Settings and more">
                         <Button.ContextMenu>
                             <!-- Reset the font: otherwise the menu inherits the button's icon font and letters show as squares. -->
                             <ContextMenu FontFamily="{StaticResource UiFontFamily}" FontSize="{StaticResource BodyFontSize}">
+                                <MenuItem Header="New tab" InputGestureText="Ctrl+T" Command="{Binding NewTabCommand}" />
+                                <MenuItem Header="Reopen closed tab" InputGestureText="Ctrl+Shift+T" Command="{Binding ReopenClosedTabCommand}" />
+                                <Separator />
+                                <MenuItem Header="Zoom in" InputGestureText="Ctrl+Plus" Command="{Binding SelectedTab.ZoomInCommand}" />
+                                <MenuItem Header="Zoom out" InputGestureText="Ctrl+Minus" Command="{Binding SelectedTab.ZoomOutCommand}" />
+                                <MenuItem Header="Reset zoom" InputGestureText="Ctrl+0" Command="{Binding SelectedTab.ResetZoomCommand}" />
+                                <MenuItem Header="Find on page" InputGestureText="Ctrl+F" Click="FindMenuItem_Click" />
+                                <MenuItem Header="Print" InputGestureText="Ctrl+P" Command="{Binding SelectedTab.PrintCommand}" />
+                                <MenuItem Header="Full screen" InputGestureText="F11" Command="{Binding ToggleFullScreenCommand}" />
+                                <Separator />
                                 <MenuItem Header="Theme">
                                     <MenuItem Header="System" IsChecked="{Binding IsSystemTheme, Mode=OneWay}"
                                               Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.System}" />
@@ -93,14 +114,49 @@
                         </Button.ContextMenu>
                     </Button>
 
-                    <controls:AddressBar DataContext="{Binding ActiveTab}"
+                    <!-- Indicators for the selected tab: blocked pop-ups and zoom level (only shown when relevant). -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
+                                DataContext="{Binding SelectedTab}">
+                        <Button Content="&#xE8A7;"
+                                Click="OpenButtonMenu_Click"
+                                Style="{StaticResource ToolbarButtonStyle}"
+                                Foreground="{DynamicResource AccentBrush}"
+                                Visibility="{Binding HasBlockedPopups, Converter={StaticResource BoolToVisibility}}"
+                                ToolTip="Pop-ups were blocked on this page"
+                                AutomationProperties.Name="Blocked pop-ups">
+                            <Button.ContextMenu>
+                                <ContextMenu FontFamily="{StaticResource UiFontFamily}" FontSize="{StaticResource BodyFontSize}"
+                                             ItemsSource="{Binding BlockedPopups}">
+                                    <ContextMenu.ItemContainerStyle>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Header" Value="{Binding StringFormat='Open {0}', TargetNullValue='(page did not give an address)'}" />
+                                            <Setter Property="Command" Value="{Binding DataContext.OpenBlockedPopupCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                            <Setter Property="CommandParameter" Value="{Binding}" />
+                                        </Style>
+                                    </ContextMenu.ItemContainerStyle>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                        <Button Content="{Binding ZoomText}"
+                                Command="{Binding ResetZoomCommand}"
+                                Style="{StaticResource ToolbarButtonStyle}"
+                                FontFamily="{StaticResource UiFontFamily}"
+                                FontSize="{StaticResource CaptionFontSize}"
+                                Width="Auto" Padding="8,0" MinWidth="48"
+                                Visibility="{Binding IsZoomed, Converter={StaticResource BoolToVisibility}}"
+                                ToolTip="Reset zoom (Ctrl+0)"
+                                AutomationProperties.Name="Reset zoom" />
+                    </StackPanel>
+
+                    <controls:AddressBar x:Name="AddressBar"
+                                         DataContext="{Binding SelectedTab}"
                                          Margin="6,0"
                                          Height="34"
                                          VerticalAlignment="Center" />
                 </DockPanel>
 
                 <!-- Thin loading indicator along the bottom edge of the toolbar. -->
-                <ProgressBar DataContext="{Binding ActiveTab}"
+                <ProgressBar DataContext="{Binding SelectedTab}"
                              IsIndeterminate="{Binding IsLoading}"
                              Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}"
                              VerticalAlignment="Bottom"
@@ -112,14 +168,34 @@
             </Grid>
         </Border>
 
-        <!-- ============ Page area ============ -->
-        <Grid Grid.Row="1" DataContext="{Binding ActiveTab}" Background="{DynamicResource ContentBackgroundBrush}">
-            <!-- The WebView2 host. Hidden while a problem panel is shown (WPF can't draw over a WebView2). -->
-            <ContentPresenter Content="{Binding BrowserView}"
-                              Visibility="{Binding IsBrowserVisible, Converter={StaticResource BoolToVisibility}}" />
+        <!-- ============ Find bar (selected tab) ============ -->
+        <controls:FindBar x:Name="FindBar" Grid.Row="2"
+                          DataContext="{Binding SelectedTab}"
+                          Visibility="{Binding IsFindBarOpen, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
 
-            <!-- Problem panel: network errors, crashes, engine failures. -->
-            <ScrollViewer Visibility="{Binding HasProblem, Converter={StaticResource BoolToVisibility}}"
+        <!-- ============ Page area ============ -->
+        <Grid Grid.Row="3" Background="{DynamicResource ContentBackgroundBrush}">
+            <!--
+                One WebView host per tab, stacked in the same cell; only the selected tab's is visible.
+                Hidden tabs keep their page state (scroll position, video, forms).
+            -->
+            <ItemsControl ItemsSource="{Binding Tabs}" Focusable="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <Grid />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:TabViewModel}">
+                        <ContentPresenter Content="{Binding BrowserView}"
+                                          Visibility="{Binding IsPageShown, Converter={StaticResource BoolToVisibility}}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Problem panel for the selected tab: network errors, crashes, engine failures. -->
+            <ScrollViewer DataContext="{Binding SelectedTab}"
+                          Visibility="{Binding HasProblem, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}"
                           VerticalScrollBarVisibility="Auto">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520" Margin="24">
                     <TextBlock Text="&#xE783;"

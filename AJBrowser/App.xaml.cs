@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using AJBrowser.Browser;
 using AJBrowser.Core.Logging;
+using AJBrowser.Core.Navigation;
 using AJBrowser.Core.Security;
 using AJBrowser.ViewModels;
 using AJBrowser.Views;
@@ -34,20 +35,20 @@ public partial class App : Application
                 return;
             }
 
-            var tab = _services.CreateTab();
             _mainViewModel = new MainWindowViewModel(
                 _services.Paths,
                 _services.Theme,
                 _services.Shell,
-                tab,
+                _services.CreateTab,
                 _services.CreateLogger(nameof(MainWindowViewModel)));
 
             var window = new MainWindow(_mainViewModel);
             MainWindow = window;
             window.Show();
 
-            // Starts the web engine and loads the home page. Never throws: problems show in the page area.
-            _ = tab.StartAsync();
+            // URLs or files passed on the command line open as tabs; otherwise one tab with the home page.
+            // Starting tabs never throws: problems show in each tab's page area.
+            _mainViewModel.OpenStartupTabs(CommandLineUrls.Parse(e.Args, _services.AddressResolver, System.IO.File.Exists));
 
 #if DEBUG
             // Phase 0.5 spike: "--diagnostics" opens the Diagnostics window. "--diagnostics-auto" also runs the

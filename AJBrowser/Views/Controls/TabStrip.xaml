@@ -1,0 +1,167 @@
+<UserControl x:Class="AJBrowser.Views.Controls.TabStrip"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AJBrowser.ViewModels"
+             xmlns:controls="clr-namespace:AJBrowser.Views.Controls"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:MainWindowViewModel, IsDesignTimeCreatable=False}"
+             d:DesignWidth="800">
+    <!-- DataContext: the MainWindowViewModel. Like a React list: ItemsSource = the tabs, the DataTemplate = one tab. -->
+    <DockPanel LastChildFill="False" Margin="6,6,6,0">
+        <ListBox DockPanel.Dock="Left"
+                 ItemsSource="{Binding Tabs}"
+                 SelectedItem="{Binding SelectedTab}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 AutomationProperties.Name="Tabs">
+            <!-- No ScrollViewer: the panel needs the real available width so it can shrink tabs. -->
+            <ListBox.Template>
+                <ControlTemplate TargetType="ListBox">
+                    <ItemsPresenter />
+                </ControlTemplate>
+            </ListBox.Template>
+
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <controls:ShrinkingTabPanel MinTabWidth="60" MaxTabWidth="240" ReservedWidth="44" />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                    <Setter Property="ToolTip" Value="{Binding Title}" />
+                    <EventSetter Event="MouseUp" Handler="Tab_MouseUp" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border x:Name="Chrome"
+                                        Height="34"
+                                        Margin="0,0,2,0"
+                                        Padding="10,0,4,0"
+                                        CornerRadius="6,6,0,0"
+                                        Background="{DynamicResource TabInactiveBackgroundBrush}">
+                                    <ContentPresenter VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource TabHoverBackgroundBrush}" />
+                                    </Trigger>
+                                    <!-- Listed last so it wins over hover. -->
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource TabActiveBackgroundBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:TabViewModel}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Icon: spinner while loading, otherwise the favicon, otherwise a globe. -->
+                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                            <Image Source="{Binding Favicon}" RenderOptions.BitmapScalingMode="HighQuality">
+                                <Image.Style>
+                                    <Style TargetType="Image">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Favicon}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Image.Style>
+                            </Image>
+                            <TextBlock Text="&#xE774;"
+                                       FontFamily="{StaticResource IconFontFamily}" FontSize="14"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Favicon}" Value="{x:Null}" />
+                                                    <Condition Binding="{Binding IsLoading}" Value="False" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="&#xE895;"
+                                       FontFamily="{StaticResource IconFontFamily}" FontSize="14"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       RenderTransformOrigin="0.5,0.5">
+                                <TextBlock.RenderTransform>
+                                    <RotateTransform />
+                                </TextBlock.RenderTransform>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <DataTrigger.EnterActions>
+                                                    <BeginStoryboard x:Name="Spin">
+                                                        <Storyboard RepeatBehavior="Forever">
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                             From="0" To="360" Duration="0:0:1" />
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.EnterActions>
+                                                <DataTrigger.ExitActions>
+                                                    <StopStoryboard BeginStoryboardName="Spin" />
+                                                </DataTrigger.ExitActions>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Title}"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="8,0,4,0"
+                                   VerticalAlignment="Center" />
+
+                        <Button Grid.Column="2"
+                                Content="&#xE711;"
+                                FontSize="10" Width="24" Height="24"
+                                Style="{StaticResource ToolbarButtonStyle}"
+                                Command="{Binding DataContext.CloseTabCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                CommandParameter="{Binding}"
+                                ToolTip="Close tab (Ctrl+W)"
+                                AutomationProperties.Name="Close tab" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <Button DockPanel.Dock="Left"
+                Content="&#xE710;"
+                Command="{Binding NewTabCommand}"
+                Style="{StaticResource ToolbarButtonStyle}"
+                VerticalAlignment="Center"
+                Margin="4,0,0,0"
+                ToolTip="New tab (Ctrl+T)"
+                AutomationProperties.Name="New tab" />
+    </DockPanel>
+</UserControl>
