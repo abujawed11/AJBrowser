@@ -43,7 +43,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
    - Test Explorer: expect **205 passing tests**.
-   - F5: the browser window opens with one tab and loads the Bing home page. The **⋯** menu (top right) has Block ads, Ad blocker settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
+   - F5: the browser window opens with one tab and loads the Bing home page. Left of **⋯** is the ad-block shield (green = blocking; click for the on/off switch). The **⋯** menu has Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
 4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (logs, WebView2 profile, unpacked ad blocker, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
@@ -109,7 +109,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 0.5 Feasibility spike | ✅ Done | Automated suite, cookie test and uBO Lite extension test (V5 → F15: blocks YouTube ads) done. Ad-block engine decided. |
 | 1 Single-tab browser | 🔶 Built | Agent: build, 113 tests, launch + home page load. **You:** the manual checks in §6. |
 | 2 Tabs | 🔶 Built | Agent: build, 166 tests, launch with 2 startup tabs + script popup blocked. **You:** the manual checks in §6. |
-| 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, 3 launches (installs on first start, reused on the next, off/on choice kept). **You:** the checks in §6. |
+| 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, launches (installs on first start, reused on the next, off/on choice kept), toolbar shield + switch driven via UI Automation. **You:** ad blocking confirmed working; remaining checks in §6. |
 | 3 Bookmarks, history, settings | ⏭ **Next** | After your checks |
 | 4–10 | Not started | Phase 8 is the optional adblock-rust upgrade |
 
@@ -152,10 +152,10 @@ Known Phase 2 limits: middle-click / Ctrl+click on links open the tab in front (
 1. **Installs itself:** the log (⋯ → Open data folder → `Logs`) has `Ad blocker ready: uBlock Origin Lite 2026.1124.1811, on`. To see a true first install, close the app and delete `%LOCALAPPDATA%\AJBrowser\Extensions\uBOLite\`, then start again: it reinstalls (log: `Installed uBlock Origin Lite …`).
 2. **YouTube:** play 3–4 videos: no pre-roll ads.
 3. **News site** (for example timesofindia.com or cnn.com): ad slots are visibly gone.
-4. **Toggle:** ⋯ → **Block ads** unticks and the page reloads → ads come back; tick it again → gone.
-5. **Restart keeps the choice:** turn it off, close, F5 → ⋯ shows Block ads unticked, ads visible. Turn it back on.
-6. **Settings:** ⋯ → **Ad blocker settings** opens uBO Lite's dashboard in a new tab (filtering mode "Optimal").
-7. Hover the menu items: the tooltip shows the uBO Lite version.
+4. **Shield:** the shield left of ⋯ is green with a tick. Click it → panel with a **Block ads** switch. Switch off → the page reloads, ads come back, the shield turns grey with a slash; switch on → gone again. Esc or clicking elsewhere closes the panel.
+5. **Restart keeps the choice:** turn it off, close, F5 → grey shield, ads visible. Turn it back on.
+6. **Settings:** shield panel → **Settings** opens uBO Lite's dashboard in a new tab (filtering mode "Optimal").
+7. Check the panel in the Light theme too (⋯ → Theme → Light).
 
 Known Phase 2.5 limits: a future uBO Lite upgrade resets its own dashboard settings (new folder → new extension id); our on/off choice is kept. Other open tabs only change after they reload.
 

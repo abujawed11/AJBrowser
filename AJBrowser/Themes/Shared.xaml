@@ -47,4 +47,72 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!--
+        On/off switch, like the Windows 11 toggle switch (WPF has no switch control of its own, so this
+        restyles a ToggleButton: IsChecked = on). The knob slides with a short animation.
+    -->
+    <Style x:Key="SwitchToggleStyle" TargetType="ToggleButton">
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Track"
+                            CornerRadius="10"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource TextSecondaryBrush}"
+                            Background="Transparent">
+                        <Ellipse x:Name="Knob"
+                                 Width="12" Height="12"
+                                 Margin="4,0"
+                                 HorizontalAlignment="Left" VerticalAlignment="Center"
+                                 Fill="{DynamicResource TextSecondaryBrush}">
+                            <Ellipse.RenderTransform>
+                                <TranslateTransform X="0" />
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}" />
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            <Setter TargetName="Knob" Property="Fill" Value="{DynamicResource SwitchKnobOnBrush}" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <!-- 40 wide − 2×4 margin − 12 knob = 20 px of travel. -->
+                                        <DoubleAnimation Storyboard.TargetName="Knob"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                         To="20" Duration="0:0:0.15" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Knob"
+                                                         Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                         To="0" Duration="0:0:0.15" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Knob" Property="Width" Value="14" />
+                            <Setter TargetName="Knob" Property="Height" Value="14" />
+                            <Setter TargetName="Knob" Property="Margin" Value="3,0" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Track" Property="BorderThickness" Value="2" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

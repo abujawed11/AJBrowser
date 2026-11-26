@@ -125,7 +125,7 @@ public partial class MainWindow : Window
                         return true;
 
                     // Esc stops loading, but text boxes (address bar, find bar) use Esc themselves.
-                    case Key.Escape when tab is { IsLoading: true } && Keyboard.FocusedElement is not TextBox:
+                    case Key.Escape when tab is { IsLoading: true } && Keyboard.FocusedElement is not TextBox && !AdBlockPopup.IsOpen:
                         tab.Stop();
                         return true;
                 }
@@ -210,6 +210,38 @@ public partial class MainWindow : Window
     }
 
     private void FindMenuItem_Click(object sender, RoutedEventArgs e) => OpenFind();
+
+    // ---------------------------------------------------------------- ad blocker panel
+
+    private long _adBlockPopupClosedAt;
+
+    /// <summary>The shield toggles its panel. Clicking the shield while the panel is open first closes it
+    /// (StaysOpen=False closes on any outside click), so don't immediately reopen it.</summary>
+    private void AdBlockButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (Environment.TickCount64 - _adBlockPopupClosedAt < 250)
+        {
+            return;
+        }
+
+        AdBlockPopup.IsOpen = true;
+        AdBlockSwitch.Focus(); // so Space toggles and Esc closes straight away
+    }
+
+    private void AdBlockPopup_Closed(object? sender, EventArgs e) => _adBlockPopupClosedAt = Environment.TickCount64;
+
+    private void AdBlockPopup_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            AdBlockPopup.IsOpen = false;
+            AdBlockButton.Focus();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>The Settings link runs its command (opens a tab); also close the panel.</summary>
+    private void AdBlockSettings_Click(object sender, RoutedEventArgs e) => AdBlockPopup.IsOpen = false;
 
     private void OpenDiagnostics_Click(object sender, RoutedEventArgs e)
     {

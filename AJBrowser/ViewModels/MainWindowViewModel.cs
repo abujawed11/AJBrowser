@@ -63,13 +63,46 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>The ad blocker is installed and can be switched (its menu items are greyed out otherwise).</summary>
     public bool IsAdBlockAvailable => _adBlocker.IsAvailable;
 
-    /// <summary>Ticks the "Block ads" menu item.</summary>
-    public bool IsAdBlockEnabled => _adBlocker.IsAvailable && _adBlocker.IsEnabled;
+    /// <summary>
+    /// Ads are being blocked. Bound two-way to the switch in the shield panel: setting it switches the ad blocker.
+    /// The getter always reports the real state, so a failed switch snaps back.
+    /// </summary>
+    public bool IsAdBlockEnabled
+    {
+        get => _adBlocker.IsAvailable && _adBlocker.IsEnabled;
+        set
+        {
+            if (value != IsAdBlockEnabled && ToggleAdBlockCommand.CanExecute(null))
+            {
+                ToggleAdBlockCommand.Execute(null); // raises PropertyChanged when done
+            }
+            else
+            {
+                OnPropertyChanged(); // nothing to do (or busy): put the switch back where it belongs
+            }
+        }
+    }
 
-    /// <summary>Tooltip for the ad-block menu items.</summary>
-    public string AdBlockStatus => _adBlocker.IsAvailable
-        ? $"uBlock Origin Lite {_adBlocker.Version}"
-        : "The ad blocker isn't available (still starting, or it failed: see the log in the data folder)";
+    /// <summary>Headline in the shield panel.</summary>
+    public string AdBlockHeadline =>
+        !_adBlocker.IsAvailable ? "Ad blocker unavailable"
+        : _adBlocker.IsEnabled ? "Ads and trackers are blocked"
+        : "Ads are not blocked";
+
+    /// <summary>Second line in the shield panel.</summary>
+    public string AdBlockDetail =>
+        !_adBlocker.IsAvailable ? "It's still starting, or it failed to load (details in the log: ⋯ → Open data folder)."
+        : _adBlocker.IsEnabled ? "On every site. Turn it off if a site doesn't work properly."
+        : "Turn it on to block ads and trackers on every site.";
+
+    /// <summary>Shield button tooltip.</summary>
+    public string AdBlockToolTip =>
+        !_adBlocker.IsAvailable ? "Ad blocker unavailable"
+        : _adBlocker.IsEnabled ? "Ad blocker: on"
+        : "Ad blocker: off";
+
+    /// <summary>Small print in the shield panel, for example "uBlock Origin Lite 2026.1124.1811".</summary>
+    public string AdBlockEngine => _adBlocker.IsAvailable ? $"uBlock Origin Lite {_adBlocker.Version}" : "uBlock Origin Lite";
 
     public bool IsDebugBuild =>
 #if DEBUG
@@ -292,7 +325,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsDarkTheme));
     }
 
-    /// <summary>⋯ menu → Block ads. The current page reloads so the change shows at once.</summary>
+    /// <summary>The switch in the shield panel. The current page reloads so the change shows at once.</summary>
     [RelayCommand(CanExecute = nameof(IsAdBlockAvailable))]
     private async Task ToggleAdBlock()
     {
@@ -303,7 +336,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>⋯ menu → Ad blocker settings: uBlock Origin Lite's own dashboard, in a new tab.</summary>
+    /// <summary>Shield panel → Ad blocker settings: uBlock Origin Lite's own dashboard, in a new tab.</summary>
     [RelayCommand(CanExecute = nameof(IsAdBlockAvailable))]
     private void OpenAdBlockSettings()
     {
@@ -317,7 +350,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(IsAdBlockAvailable));
         OnPropertyChanged(nameof(IsAdBlockEnabled));
-        OnPropertyChanged(nameof(AdBlockStatus));
+        OnPropertyChanged(nameof(AdBlockHeadline));
+        OnPropertyChanged(nameof(AdBlockDetail));
+        OnPropertyChanged(nameof(AdBlockToolTip));
+        OnPropertyChanged(nameof(AdBlockEngine));
         ToggleAdBlockCommand.NotifyCanExecuteChanged();
         OpenAdBlockSettingsCommand.NotifyCanExecuteChanged();
     }
