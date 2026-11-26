@@ -4,7 +4,9 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:AJBrowser.ViewModels"
-        xmlns:svc="clr-namespace:AJBrowser.Services"
+        xmlns:settings="clr-namespace:AJBrowser.Core.Settings;assembly=AJBrowser.Core"
+        xmlns:pages="clr-namespace:AJBrowser.Views.Pages"
+        xmlns:pagevm="clr-namespace:AJBrowser.ViewModels.Pages"
         xmlns:controls="clr-namespace:AJBrowser.Views.Controls"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainWindowViewModel, IsDesignTimeCreatable=False}"
@@ -20,10 +22,35 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!-- Internal pages: each page view model type is drawn by its WPF view (like a route → component map). -->
+        <DataTemplate DataType="{x:Type pagevm:HistoryPageViewModel}">
+            <pages:HistoryPage />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type pagevm:BookmarksPageViewModel}">
+            <pages:BookmarksPage />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type pagevm:SettingsPageViewModel}">
+            <pages:SettingsPage />
+        </DataTemplate>
+
+        <!-- Items in a bookmarks-bar folder menu (nested folders become submenus). -->
+        <Style x:Key="BookmarkMenuItemStyle" TargetType="MenuItem">
+            <Setter Property="Header" Value="{Binding Title}" />
+            <Setter Property="ToolTip" Value="{Binding ToolTip}" />
+            <Setter Property="ItemsSource" Value="{Binding Children}" />
+            <Setter Property="Icon">
+                <Setter.Value>
+                    <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFontFamily}" FontSize="14" />
+                </Setter.Value>
+            </Setter>
+            <EventSetter Event="Click" Handler="BookmarkMenuItem_Click" />
+        </Style>
     </Window.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -89,6 +116,12 @@
                                 <MenuItem Header="New tab" InputGestureText="Ctrl+T" Command="{Binding NewTabCommand}" />
                                 <MenuItem Header="Reopen closed tab" InputGestureText="Ctrl+Shift+T" Command="{Binding ReopenClosedTabCommand}" />
                                 <Separator />
+                                <MenuItem Header="History" InputGestureText="Ctrl+H" Command="{Binding ShowHistoryCommand}" />
+                                <MenuItem Header="Bookmarks" InputGestureText="Ctrl+Shift+O" Command="{Binding ShowBookmarksCommand}" />
+                                <MenuItem Header="Bookmark this page" InputGestureText="Ctrl+D" Command="{Binding SelectedTab.BookmarkPageCommand}" />
+                                <MenuItem Header="Show or hide bookmarks bar" InputGestureText="Ctrl+Shift+B" Command="{Binding ToggleBookmarksBarCommand}" />
+                                <MenuItem Header="Clear browsing data" InputGestureText="Ctrl+Shift+Del" Command="{Binding ShowClearBrowsingDataCommand}" />
+                                <Separator />
                                 <MenuItem Header="Zoom in" InputGestureText="Ctrl+Plus" Command="{Binding SelectedTab.ZoomInCommand}" />
                                 <MenuItem Header="Zoom out" InputGestureText="Ctrl+Minus" Command="{Binding SelectedTab.ZoomOutCommand}" />
                                 <MenuItem Header="Reset zoom" InputGestureText="Ctrl+0" Command="{Binding SelectedTab.ResetZoomCommand}" />
@@ -98,12 +131,13 @@
                                 <Separator />
                                 <MenuItem Header="Theme">
                                     <MenuItem Header="System" IsChecked="{Binding IsSystemTheme, Mode=OneWay}"
-                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.System}" />
+                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static settings:ThemeSetting.System}" />
                                     <MenuItem Header="Light" IsChecked="{Binding IsLightTheme, Mode=OneWay}"
-                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.Light}" />
+                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static settings:ThemeSetting.Light}" />
                                     <MenuItem Header="Dark" IsChecked="{Binding IsDarkTheme, Mode=OneWay}"
-                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.Dark}" />
+                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static settings:ThemeSetting.Dark}" />
                                 </MenuItem>
+                                <MenuItem Header="Settings" Command="{Binding ShowSettingsCommand}" />
                                 <MenuItem Header="Open data folder" Command="{Binding OpenDataFolderCommand}" />
                                 <Separator Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}" />
                                 <MenuItem Header="Diagnostics (debug)" Click="OpenDiagnostics_Click"
@@ -122,8 +156,8 @@
                             Click="AdBlockButton_Click"
                             Style="{StaticResource ToolbarButtonStyle}"
                             VerticalAlignment="Center"
-                            ToolTip="{Binding AdBlockToolTip}"
-                            AutomationProperties.Name="{Binding AdBlockToolTip}">
+                            ToolTip="{Binding AdBlock.ToolTip}"
+                            AutomationProperties.Name="{Binding AdBlock.ToolTip}">
                         <Viewbox Width="18" Height="18">
                             <Canvas Width="16" Height="16">
                                 <Path x:Name="ShieldShape"
@@ -134,7 +168,7 @@
                                             <Setter Property="Fill" Value="Transparent" />
                                             <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsAdBlockEnabled}" Value="True">
+                                                <DataTrigger Binding="{Binding AdBlock.IsEnabled}" Value="True">
                                                     <Setter Property="Fill" Value="{DynamicResource SuccessBrush}" />
                                                     <Setter Property="Stroke" Value="{DynamicResource SuccessBrush}" />
                                                 </DataTrigger>
@@ -146,7 +180,7 @@
                                 <Path Data="M5.2,8.1 L7.2,10.1 L10.9,6.3"
                                       Stroke="{DynamicResource ChromeBackgroundBrush}" StrokeThickness="1.6"
                                       StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                      Visibility="{Binding IsAdBlockEnabled, Converter={StaticResource BoolToVisibility}}" />
+                                      Visibility="{Binding AdBlock.IsEnabled, Converter={StaticResource BoolToVisibility}}" />
                                 <!-- Slash (off) -->
                                 <Path Data="M2.5,2.5 L13.5,14"
                                       Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="1.3"
@@ -155,7 +189,7 @@
                                         <Style TargetType="Path">
                                             <Setter Property="Visibility" Value="Visible" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsAdBlockEnabled}" Value="True">
+                                                <DataTrigger Binding="{Binding AdBlock.IsEnabled}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -190,18 +224,18 @@
                                     <ToggleButton x:Name="AdBlockSwitch" DockPanel.Dock="Right"
                                                   Style="{StaticResource SwitchToggleStyle}"
                                                   VerticalAlignment="Center"
-                                                  IsChecked="{Binding IsAdBlockEnabled, Mode=TwoWay}"
-                                                  IsEnabled="{Binding IsAdBlockAvailable}"
+                                                  IsChecked="{Binding AdBlock.IsEnabled, Mode=TwoWay}"
+                                                  IsEnabled="{Binding AdBlock.IsAvailable}"
                                                   AutomationProperties.Name="Block ads" />
                                     <TextBlock Text="Block ads" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </DockPanel>
-                                <TextBlock Text="{Binding AdBlockHeadline}" Margin="0,10,0,0" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding AdBlockDetail}" Margin="0,2,0,0" TextWrapping="Wrap"
+                                <TextBlock Text="{Binding AdBlock.Headline}" Margin="0,10,0,0" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding AdBlock.Detail}" Margin="0,2,0,0" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextSecondaryBrush}" />
                                 <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
                                 <DockPanel LastChildFill="True">
                                     <Button DockPanel.Dock="Right"
-                                            Command="{Binding OpenAdBlockSettingsCommand}"
+                                            Command="{Binding AdBlock.OpenSettingsCommand}"
                                             Click="AdBlockSettings_Click"
                                             Style="{StaticResource ToolbarButtonStyle}"
                                             FontFamily="{StaticResource UiFontFamily}" FontSize="{StaticResource BodyFontSize}"
@@ -210,7 +244,7 @@
                                             Content="Settings"
                                             ToolTip="Filtering mode and per-site exceptions (opens in a new tab)"
                                             AutomationProperties.Name="Ad blocker settings" />
-                                    <TextBlock Text="{Binding AdBlockEngine}" VerticalAlignment="Center"
+                                    <TextBlock Text="{Binding AdBlock.Engine}" VerticalAlignment="Center"
                                                FontSize="{StaticResource CaptionFontSize}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" />
                                 </DockPanel>
@@ -272,15 +306,58 @@
             </Grid>
         </Border>
 
+        <!-- ============ Bookmarks bar (Ctrl+Shift+B) ============ -->
+        <Border Grid.Row="2"
+                Background="{DynamicResource ChromeBackgroundBrush}"
+                BorderBrush="{DynamicResource ChromeBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,2"
+                Visibility="{Binding IsBookmarksBarShown, Converter={StaticResource BoolToVisibility}}">
+            <Grid MinHeight="30">
+                <TextBlock Text="Bookmarks you add to the bookmarks bar appear here. Click the star in the address bar (Ctrl+D)."
+                           VerticalAlignment="Center" Margin="6,0"
+                           FontSize="{StaticResource CaptionFontSize}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Visibility="{Binding IsBookmarksBarEmpty, Converter={StaticResource BoolToVisibility}}" />
+                <!-- One row; bookmarks that don't fit are cut off (they stay reachable on the Bookmarks page). -->
+                <ItemsControl ItemsSource="{Binding BookmarksBarItems}" Focusable="False" ClipToBounds="True">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:BookmarkNodeViewModel}">
+                            <Button Style="{StaticResource ToolbarButtonStyle}"
+                                    Width="Auto" Height="28" Padding="8,0" MaxWidth="200"
+                                    FontFamily="{StaticResource UiFontFamily}" FontSize="{StaticResource CaptionFontSize}"
+                                    ToolTip="{Binding ToolTip}"
+                                    AutomationProperties.Name="{Binding Title}"
+                                    Click="BookmarkBarItem_Click"
+                                    MouseUp="BookmarkBarItem_MouseUp">
+                                <StackPanel Orientation="Horizontal" Margin="8,0">
+                                    <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFontFamily}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="0,0,6,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="160" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </Border>
+
         <!-- ============ Find bar (selected tab) ============ -->
-        <controls:FindBar x:Name="FindBar" Grid.Row="2"
+        <controls:FindBar x:Name="FindBar" Grid.Row="3"
                           DataContext="{Binding SelectedTab}"
                           Visibility="{Binding IsFindBarOpen, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
 
         <!-- ============ Page area ============ -->
-        <Grid Grid.Row="3" Background="{DynamicResource ContentBackgroundBrush}">
+        <Grid Grid.Row="4" Background="{DynamicResource ContentBackgroundBrush}">
             <!--
-                One WebView host per tab, stacked in the same cell; only the selected tab's is visible.
+                One host per tab, stacked in the same cell; only the selected tab's is visible.
+                Each tab shows its WebView, or an internal page (History, Bookmarks, Settings) drawn by the DataTemplates above.
                 Hidden tabs keep their page state (scroll position, video, forms).
             -->
             <ItemsControl ItemsSource="{Binding Tabs}" Focusable="False">
@@ -291,8 +368,12 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:TabViewModel}">
-                        <ContentPresenter Content="{Binding BrowserView}"
-                                          Visibility="{Binding IsPageShown, Converter={StaticResource BoolToVisibility}}" />
+                        <Grid>
+                            <ContentPresenter Content="{Binding BrowserView}"
+                                              Visibility="{Binding IsPageShown, Converter={StaticResource BoolToVisibility}}" />
+                            <ContentPresenter Content="{Binding InternalPageContent}"
+                                              Visibility="{Binding IsInternalPageShown, Converter={StaticResource BoolToVisibility}}" />
+                        </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>

@@ -18,7 +18,11 @@ public partial class App : Application
     private MainWindowViewModel? _mainViewModel;
     private bool _isShowingErrorDialog;
 
-    protected override void OnStartup(StartupEventArgs e)
+    /// <summary>
+    /// async void is the one place it's normal in WPF: OnStartup is an event-style override. Everything up to the
+    /// first await runs before any window shows; failures are caught below.
+    /// </summary>
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         RegisterGlobalExceptionHandlers();
@@ -37,19 +41,36 @@ public partial class App : Application
 
             _mainViewModel = new MainWindowViewModel(
                 _services.Paths,
-                _services.Theme,
+                _services.Settings,
                 _services.Shell,
                 _services.Extensions,
+                _services.Bookmarks,
+                _services.Session,
                 _services.CreateTab,
                 _services.CreateLogger(nameof(MainWindowViewModel)));
+            _services.AdBlock = _mainViewModel.AdBlock;
 
             var window = new MainWindow(_mainViewModel);
             MainWindow = window;
             window.Show();
 
-            // URLs or files passed on the command line open as tabs; otherwise one tab with the home page.
-            // Starting tabs never throws: problems show in each tab's page area.
-            _mainViewModel.OpenStartupTabs(CommandLineUrls.Parse(e.Args, _services.AddressResolver, System.IO.File.Exists));
+            if (_services.DatabaseResult.RecreatedAfterCorruption)
+            {
+                MessageBox.Show(
+                    "AJBrowser's history and bookmarks file was damaged, so a new empty one was created.\n\n" +
+                    $"The damaged file was kept here:\n{_services.DatabaseResult.CorruptBackupPath}",
+                    "AJBrowser",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
+            // Bookmarks (for the bar and the star) load in the background while the tabs open.
+            var bookmarksLoaded = _services.Bookmarks.LoadAsync();
+
+            // The saved session (if "Continue where you left off" is on), then URLs or files from the command line;
+            // otherwise one tab with the home page. Starting tabs never throws: problems show in each tab's page area.
+            await _mainViewModel.OpenStartupTabsAsync(CommandLineUrls.Parse(e.Args, _services.AddressResolver, System.IO.File.Exists));
+            await bookmarksLoaded;
 
 #if DEBUG
             // Phase 0.5 spike: "--diagnostics" opens the Diagnostics window. "--diagnostics-auto" also runs the

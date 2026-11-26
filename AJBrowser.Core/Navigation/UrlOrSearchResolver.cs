@@ -50,20 +50,40 @@ public sealed partial class UrlOrSearchResolver
 
     private static readonly IdnMapping Idn = new();
 
-    private readonly string _searchTemplate;
+    private volatile string _searchTemplate;
 
     public UrlOrSearchResolver(string searchTemplate)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(searchTemplate);
+        _searchTemplate = Validate(searchTemplate, nameof(searchTemplate));
+    }
 
-        if (!searchTemplate.Contains(QueryPlaceholder, StringComparison.Ordinal)
-            || !Uri.TryCreate(searchTemplate.Replace(QueryPlaceholder, "test", StringComparison.Ordinal), UriKind.Absolute, out var sample)
-            || (sample.Scheme != Uri.UriSchemeHttps && sample.Scheme != Uri.UriSchemeHttp))
+    /// <summary>The search URL template in use. Changed when the user picks another search engine in Settings.</summary>
+    public string SearchTemplate
+    {
+        get => _searchTemplate;
+        set => _searchTemplate = Validate(value, nameof(value));
+    }
+
+    /// <summary>True for an http(s) URL containing <see cref="QueryPlaceholder"/>.</summary>
+    public static bool IsValidSearchTemplate(string? template)
+    {
+        var text = template?.Trim();
+        return !string.IsNullOrEmpty(text)
+               && text.Contains(QueryPlaceholder, StringComparison.Ordinal)
+               && Uri.TryCreate(text.Replace(QueryPlaceholder, "test", StringComparison.Ordinal), UriKind.Absolute, out var sample)
+               && (sample.Scheme == Uri.UriSchemeHttps || sample.Scheme == Uri.UriSchemeHttp)
+               && sample.Host.Length > 0;
+    }
+
+    private static string Validate(string template, string paramName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(template, paramName);
+        if (!IsValidSearchTemplate(template))
         {
-            throw new ArgumentException($"The search template must be an http(s) URL containing {QueryPlaceholder}.", nameof(searchTemplate));
+            throw new ArgumentException($"The search template must be an http(s) URL containing {QueryPlaceholder}.", paramName);
         }
 
-        _searchTemplate = searchTemplate;
+        return template.Trim();
     }
 
     public AddressResolution Resolve(string? input)

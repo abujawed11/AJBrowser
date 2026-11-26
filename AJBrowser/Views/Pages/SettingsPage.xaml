@@ -1,0 +1,146 @@
+<UserControl x:Class="AJBrowser.Views.Pages.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AJBrowser.ViewModels.Pages"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:SettingsPageViewModel, IsDesignTimeCreatable=False}"
+             d:DesignWidth="900" d:DesignHeight="1200"
+             Background="{DynamicResource ContentBackgroundBrush}">
+    <!-- DataContext: SettingsPageViewModel (ajbrowser://settings). Changes apply immediately; there is no Save button. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+        <StackPanel MaxWidth="760" Margin="32,24,32,48">
+            <TextBlock Text="Settings" Style="{StaticResource PageTitleStyle}" />
+
+            <!-- ============ Appearance ============ -->
+            <TextBlock Text="Appearance" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,8" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="Theme" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <RadioButton GroupName="Theme" Content="Use Windows setting" IsChecked="{Binding IsThemeSystem}" Margin="0,0,24,0" />
+                        <RadioButton GroupName="Theme" Content="Light" IsChecked="{Binding IsThemeLight}" Margin="0,0,24,0" />
+                        <RadioButton GroupName="Theme" Content="Dark" IsChecked="{Binding IsThemeDark}" />
+                    </StackPanel>
+                    <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
+                    <DockPanel>
+                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggleStyle}"
+                                      IsChecked="{Binding ShowBookmarksBar}" AutomationProperties.Name="Show bookmarks bar" />
+                        <StackPanel>
+                            <TextBlock Text="Show bookmarks bar" FontWeight="SemiBold" />
+                            <TextBlock Text="Ctrl+Shift+B" Style="{StaticResource SecondaryTextStyle}" />
+                        </StackPanel>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ============ On startup ============ -->
+            <TextBlock Text="On startup" Style="{StaticResource SectionHeadingStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <RadioButton GroupName="Startup" Content="Open the home page" IsChecked="{Binding IsStartupHomePage}" />
+                    <RadioButton GroupName="Startup" Content="Continue where you left off (reopen your tabs)" IsChecked="{Binding IsStartupRestore}" Margin="0,8,0,0" />
+                    <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
+                    <TextBlock Text="Home page" FontWeight="SemiBold" />
+                    <TextBlock Text="Also opens with the Home button and in new tabs." Style="{StaticResource SecondaryTextStyle}" />
+                    <TextBox Margin="0,8,0,0" Text="{Binding HomePageText, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Home page"
+                             LostKeyboardFocus="HomePage_LostKeyboardFocus" KeyDown="HomePage_KeyDown" />
+                    <TextBlock Text="{Binding HomePageError}" Style="{StaticResource ErrorTextStyle}" />
+                </StackPanel>
+            </Border>
+
+            <!-- ============ Search ============ -->
+            <TextBlock Text="Search" Style="{StaticResource SectionHeadingStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <DockPanel>
+                        <ComboBox DockPanel.Dock="Right" MinWidth="200"
+                                  ItemsSource="{Binding SearchEngineOptions}" SelectedItem="{Binding SelectedSearchEngine}"
+                                  DisplayMemberPath="Name" AutomationProperties.Name="Search engine" />
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Search engine used in the address bar" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </DockPanel>
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding IsCustomSearch, Converter={StaticResource PageBoolToVisibility}}">
+                        <TextBlock Text="Search address: put {query} where the search words go." Style="{StaticResource SecondaryTextStyle}" />
+                        <TextBox Margin="0,8,0,0" Text="{Binding CustomSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Custom search address"
+                                 LostKeyboardFocus="CustomSearch_LostKeyboardFocus" KeyDown="CustomSearch_KeyDown" />
+                        <TextBlock Text="{Binding CustomSearchError}" Style="{StaticResource ErrorTextStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ============ Privacy ============ -->
+            <TextBlock Text="Privacy" Style="{StaticResource SectionHeadingStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <DockPanel DataContext="{Binding AdBlock}">
+                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggleStyle}" VerticalAlignment="Center"
+                                      IsChecked="{Binding IsEnabled, Mode=TwoWay}" IsEnabled="{Binding IsAvailable}"
+                                      AutomationProperties.Name="Block ads" />
+                        <StackPanel>
+                            <TextBlock Text="Block ads and trackers" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Headline}" Style="{StaticResource SecondaryTextStyle}" />
+                            <StackPanel Orientation="Horizontal" Margin="-8,4,0,0">
+                                <Button Content="Ad blocker settings" Style="{StaticResource LinkButtonStyle}" Height="28"
+                                        Command="{Binding OpenSettingsCommand}" />
+                                <TextBlock Text="{Binding Engine}" VerticalAlignment="Center" Margin="8,0,0,0"
+                                           FontSize="{StaticResource CaptionFontSize}" Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Clear browsing data…" Command="{Binding OpenHistoryCommand}" VerticalAlignment="Center" />
+                        <StackPanel>
+                            <TextBlock Text="History, cookies and cache" FontWeight="SemiBold" />
+                            <TextBlock Text="Opens History, where you can clear data for a time range (Ctrl+Shift+Delete)." Style="{StaticResource SecondaryTextStyle}" />
+                        </StackPanel>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ============ Downloads ============ -->
+            <TextBlock Text="Downloads" Style="{StaticResource SectionHeadingStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="The download manager arrives in a later version; these choices are already remembered."
+                               Style="{StaticResource SecondaryTextStyle}" Margin="0,0,0,12" />
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="Reset" Command="{Binding ResetDownloadFolderCommand}" Margin="0,0,8,0"
+                                    Visibility="{Binding HasCustomDownloadFolder, Converter={StaticResource PageBoolToVisibility}}" />
+                            <Button Content="Change…" Click="ChangeDownloadFolder_Click" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="Save files to" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding DownloadFolderText}" Style="{StaticResource SecondaryTextStyle}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
+                    <DockPanel>
+                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggleStyle}"
+                                      IsChecked="{Binding AskWhereToSave}" AutomationProperties.Name="Ask where to save each file" />
+                        <TextBlock Text="Ask where to save each file" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ============ About ============ -->
+            <TextBlock Text="About" Style="{StaticResource SectionHeadingStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="{Binding VersionText}" FontWeight="SemiBold" />
+                    <TextBlock Text="Built on Microsoft Edge WebView2. Ad blocking by uBlock Origin Lite (GPLv3)." Style="{StaticResource SecondaryTextStyle}" />
+                    <StackPanel Orientation="Horizontal" Margin="-8,8,0,0">
+                        <Button Content="Third-party notices" Style="{StaticResource LinkButtonStyle}" Height="28" Command="{Binding OpenNoticesCommand}" />
+                        <Button Content="Open data folder" Style="{StaticResource LinkButtonStyle}" Height="28" Command="{Binding OpenDataFolderCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -42,6 +42,7 @@ Everything is per-user under `%LOCALAPPDATA%\AJBrowser\`:
 | `WebView2\` | Browser profile: cookies, cache, site storage |
 | `Data\` | Database and settings |
 | `Filters\` | Ad-block filter lists |
+| `Data\` | `ajbrowser.db` (history, bookmarks, saved tabs; SQLite) and `settings.json` |
 | `Extensions\` | The unpacked ad blocker (uBlock Origin Lite) the browser loads, plus `state.json` (on/off) |
 | `Logs\` | Application logs, one file per day. URLs have query strings removed, and cookie/authorization values are redacted. |
 | `Temp\` | Scratch files for downloads |

@@ -20,6 +20,7 @@ public sealed class BrowserEnvironment
     private readonly string _userDataFolder;
     private readonly AppLogger _log;
     private Task<CoreWebView2Environment>? _current;
+    private CoreWebView2Profile? _profile;
 
     public BrowserEnvironment(string userDataFolder, AppLogger log)
     {
@@ -62,6 +63,37 @@ public sealed class BrowserEnvironment
         }
 
         return _current = CreateAsync();
+    }
+
+    /// <summary>Called by every new WebView: browsing data belongs to the profile, which is only reachable through a WebView.</summary>
+    internal void RememberProfile(CoreWebView2Profile profile) => _profile = profile;
+
+    /// <summary>
+    /// Clears cookies, site storage, the disk cache and the engine's own history, from <paramref name="fromUtc"/>
+    /// (null = all time) until now. Returns false if no web page has been opened yet (no profile to clear).
+    /// </summary>
+    public async Task<bool> ClearBrowsingDataAsync(DateTime? fromUtc)
+    {
+        if (_profile is null)
+        {
+            return false;
+        }
+
+        // Not passwords, autofill or settings: "clear browsing data" shouldn't wipe those.
+        const CoreWebView2BrowsingDataKinds kinds =
+            CoreWebView2BrowsingDataKinds.AllSite | CoreWebView2BrowsingDataKinds.DiskCache | CoreWebView2BrowsingDataKinds.BrowsingHistory;
+
+        if (fromUtc is { } from)
+        {
+            await _profile.ClearBrowsingDataAsync(kinds, DateTime.SpecifyKind(from, DateTimeKind.Utc), DateTime.UtcNow);
+        }
+        else
+        {
+            await _profile.ClearBrowsingDataAsync(kinds);
+        }
+
+        _log.Info($"Cleared cookies, site data and cache ({(fromUtc is null ? "all time" : "since " + fromUtc.Value.ToString("u"))})");
+        return true;
     }
 
     public CoreWebView2ControllerOptions CreateControllerOptions(CoreWebView2Environment environment)

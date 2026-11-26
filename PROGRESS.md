@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2 and 2.5 🔶 built, awaiting your manual checks · **Next: your checks, then Phase 3 (bookmarks, history, settings)**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Next: your Phase 3 checks, then Phase 4 (download manager)**
 
 ---
 
@@ -42,11 +42,11 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **205 passing tests**.
-   - F5: the browser window opens with one tab and loads the Bing home page. Left of **⋯** is the ad-block shield (green = blocking; click for the on/off switch). The **⋯** menu has Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
+   - Test Explorer: expect **282 passing tests**.
+   - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** is the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
-4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (logs, WebView2 profile, unpacked ad blocker, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
+4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (`Data\ajbrowser.db` = history, bookmarks, session; `Data\settings.json`; logs, WebView2 profile, unpacked ad blocker, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
 
 **CLI equivalents** (run in the repo root):
 ```powershell
@@ -65,8 +65,10 @@ THIRD-PARTY-NOTICES.md       uBO Lite (GPLv3, version, SHA-256, source link), We
 IMPLEMENTATION_PLAN.md       full roadmap (phases 0–10), findings, decisions
 PROGRESS.md                  this file
 AJBrowser/                   WPF app (net10.0-windows)
-  App.xaml(.cs)              OnStartup composition, WebView2 runtime check, command-line URLs as tabs, global exception handlers, --diagnostics args (DEBUG)
-  AppServices.cs             hand-written composition root (no DI container); CreateTab()
+  App.xaml(.cs)              OnStartup (async): services, WebView2 runtime check, corrupt-DB notice, bookmarks load,
+                             session restore + command-line URLs, global exception handlers, --diagnostics args (DEBUG)
+  AppServices.cs             hand-written composition root (no DI container): loads settings + opens DB before the window,
+                             CreateTab(), CreatePage() for internal pages, applies theme/search engine on settings change
   Browser/BrowserEnvironment.cs  shared CoreWebView2Environment (lazy, recreatable), runtime check, profile "Default",
                              AreBrowserExtensionsEnabled = true
   Browser/ExtensionManager.cs    ad blocker: unpack bundled uBO Lite zip → install/upgrade in profile once per start,
@@ -77,13 +79,25 @@ AJBrowser/                   WPF app (net10.0-windows)
   Browser/PopupRequest.cs    hands a new tab's WebView to WebView2 as a popup (deferral + NewWindow)
   Browser/PageProblem.cs     error/crash panel model + which navigation errors get a panel
   Services/ThemeService.cs   Fluent ThemeMode (WPF0001 suppressed here) + Light/Dark brush swap, follows Windows
-  Services/ShellService.cs   open folder in Explorer, open URL in the default browser
-  ViewModels/MainWindowViewModel.cs   tab list, selected tab, close/reopen, popups → tabs, fullscreen, theme, debug
-  ViewModels/TabViewModel.cs address bar, title, favicon, loading, back/forward, zoom, find, blocked popups, problem panel
-  Views/MainWindow.xaml(.cs) tab strip, toolbar, ⋯ menu, find bar, one WebView host per tab, problem panel;
-                             code-behind: keyboard shortcuts, fullscreen, menus
-  Views/Controls/            AddressBar, TabStrip (+ ShrinkingTabPanel), FindBar
-  Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle)
+  Services/ShellService.cs   open folder in Explorer, open URL in the default browser, open a text file in Notepad
+  Services/HistoryService.cs record visits/titles (queued background writes), search, delete, clear range
+  Services/BookmarkService.cs all bookmarks in memory + write-through to SQLite, folder choices, Changed event
+  Services/SessionService.cs debounced (1 s) session saves + final synchronous save at exit
+  ViewModels/MainWindowViewModel.cs   tab list, selected tab, close/reopen, popups → tabs, fullscreen, theme (via settings),
+                             startup/session restore, bookmarks bar, internal pages, session snapshot
+  ViewModels/TabViewModel.cs address bar, title, favicon, loading, back/forward, zoom, find, blocked popups, problem panel,
+                             internal page or web page, lazy engine start, history recording, star, suggestions
+  ViewModels/AdBlockViewModel.cs      ad-block state shared by the shield and the Settings page
+  ViewModels/SuggestionsViewModel.cs  address-bar suggestions (debounced, ranked in Core)
+  ViewModels/BookmarkEditorViewModel.cs  the star's edit panel
+  ViewModels/InternalPageContracts.cs  IInternalPage, IPageHost, OpenTarget, TabServices
+  ViewModels/Pages/          History/Bookmarks/SettingsPageViewModel (ajbrowser:// pages)
+  Views/MainWindow.xaml(.cs) tab strip, toolbar, ⋯ menu, bookmarks bar, find bar, one host per tab (web or internal page),
+                             problem panel; code-behind: keyboard shortcuts, fullscreen, menus, bookmarks-bar clicks
+  Views/Controls/            AddressBar (star + edit panel, suggestions drop-down), TabStrip (+ ShrinkingTabPanel), FindBar
+  Views/Pages/               HistoryPage, BookmarksPage, SettingsPage (WPF views shown in a tab)
+  Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle,
+                             SwitchToggleStyle), Pages.xaml (internal page styles)
   Diagnostics/               Phase 0.5 spike, DEBUG ONLY (excluded from Release via csproj)
 AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Infrastructure/AppPaths.cs %LOCALAPPDATA%\AJBrowser\{WebView2,Data,Filters,Extensions,Logs,Temp,Tools}
@@ -91,14 +105,18 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
                              AdBlockerInstallPlanner (keep/install/replace), AdBlockerState (state.json)
   Logging/                   LogEntry, ILogSink, AppLogger (always redacts), FileLogSink (daily, 5 MB roll, keep 10)
   Security/Redactor.cs       strips URL query/fragment/user-info; redacts Cookie/Authorization/Bearer in text
-  Navigation/                UrlOrSearchResolver, UrlDisplay, BrowserDefaults (Bing home/search until Phase 3),
-                             ZoomLevels, FindStatus, CommandLineUrls
+  Navigation/                UrlOrSearchResolver (search template changeable), UrlDisplay, ZoomLevels, FindStatus,
+                             CommandLineUrls, InternalPages (ajbrowser://), HistoryRules, SuggestionRanker
+  Persistence/               Database (WAL, migrations via user_version, corrupt-file recovery), Migrations (v1),
+                             History/Bookmark/SessionRepository (async, SQL off the UI thread)
+  Settings/                  AppSettings (record, defaults, Normalize), SettingsStore (settings.json), SearchEngines
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking (205 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings (282 tests)
 ```
 
 **Packages:**
 - App: `Microsoft.Web.WebView2` 1.0.4370.26, `CommunityToolkit.Mvvm` 8.4.2
+- Core: `Microsoft.Data.Sqlite` 11.0.0 (added in Phase 3)
 - Tests: xUnit 2.9.3, `xunit.runner.visualstudio` 3.1.4, `Microsoft.NET.Test.Sdk` 17.14.1
 
 ## 5. Phase status
@@ -110,8 +128,9 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 1 Single-tab browser | 🔶 Built | Agent: build, 113 tests, launch + home page load. **You:** the manual checks in §6. |
 | 2 Tabs | 🔶 Built | Agent: build, 166 tests, launch with 2 startup tabs + script popup blocked. **You:** the manual checks in §6. |
 | 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, launches (installs on first start, reused on the next, off/on choice kept), toolbar shield + switch driven via UI Automation. **You:** ad blocking confirmed working; remaining checks in §6. |
-| 3 Bookmarks, history, settings | ⏭ **Next** | After your checks |
-| 4–10 | Not started | Phase 8 is the optional adblock-rust upgrade |
+| 3 Bookmarks, history, settings | 🔶 Built | Agent: build, 282 tests, app driven via UI Automation (star, history, bookmarks, settings, suggestions, session restore of 4 tabs, clear history). **You:** the checks in §6. |
+| 4 Download manager | ⏭ **Next** | After your Phase 3 checks |
+| 5–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
 - Media responses expose content type, length and range, and manifest bodies are readable. But content types are unreliable, DASH segments look like `video/mp4`, and fMP4 HLS uses a byte-range `main.mp4`, so suppress anything a manifest references.
@@ -130,7 +149,21 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: check Phases 1, 2 and 2.5, then Phase 3
+## 6. Next task: check Phase 3 (and anything left from 1, 2, 2.5), then Phase 4
+
+**Phase 3 checks** (F5, Debug). Your data starts empty: the agent deleted its test database and settings.
+1. **History:** visit 3–4 sites, then Ctrl+H (or ⋯ → History). They're listed under "Today" with times; the search box filters; the 🗑 removes one; clicking a row opens it in the tab, middle-click opens it in a background tab.
+2. **Clear browsing data:** Ctrl+Shift+Delete → pick "Last hour" → Clear now → those entries are gone. Optionally tick "Also clear cookies…" (signs you out of sites); afterwards check the shield is still green and ads are still blocked.
+3. **Star / Ctrl+D:** on a page, click ☆ → it turns blue, the page appears on the bookmarks bar, and a panel lets you rename it or pick a folder (saved when the panel closes). Click the blue star again → Remove.
+4. **Bookmarks page:** Ctrl+Shift+O → New folder → select it, rename it in the right panel, Save. Move a bookmark into it (select → Folder → Save). Double-click the folder to open it, ↑ to go back. Delete works. The folder shows on the bar with a drop-down menu.
+5. **Bookmarks bar:** Ctrl+Shift+B hides/shows it (also in Settings). Click a bookmark → opens here; middle-click → background tab.
+6. **Suggestions:** in the address bar type the start of a visited site ("exa", "git"…) → a list appears (☆ = bookmark, 🕘 = history); ↑/↓ + Enter or click opens it; Esc closes the list, a second Esc restores the address.
+7. **Settings** (⋯ → Settings, or type `ajbrowser://settings`): theme radio buttons switch at once; change the search engine to DuckDuckGo → searching from the address bar uses it; try Custom with `https://example.com/?q={query}`; change the home page (Enter to apply; a bad value shows a red message) → Home button and new tabs use it; the Block ads switch matches the shield.
+8. **Session restore:** Settings → "Continue where you left off". Open 3–4 tabs (one of them History), close the window with ✕, start again → the same tabs come back, the active one loads, the others load when you click them.
+9. **Restart keeps everything:** bookmarks, history and settings are still there after a restart.
+10. Check the new pages in the Light theme too.
+
+Known Phase 3 limits: bookmarks can't be reordered by dragging yet; closing the *last* tab closes the window and saves an empty session; history shows each page once, on the day of its latest visit; instantly-sent keystrokes right after Ctrl+T can lose their first characters (normal typing is fine).
 
 **Phase 1 checks** (not reported yet): address bar (`example.com`, `best wpf tutorials`, `c#`), click-to-select-all and Esc, Back/Forward, Reload/Stop, `http://nonexistent.invalid` → error panel with Try again, Wi-Fi off → error panel, ending a `msedgewebview2.exe` renderer in Task Manager → crash panel, theme switch.
 
@@ -159,12 +192,14 @@ Known Phase 2 limits: middle-click / Ctrl+click on links open the tab in front (
 
 Known Phase 2.5 limits: a future uBO Lite upgrade resets its own dashboard settings (new folder → new extension id); our on/off choice is kept. Other open tabs only change after they reload.
 
-Report anything odd, and the agent will fix it before Phase 3.
+**Open issue (F16, deferred to Phase 8):** YouTube repeatedly shows "Experiencing interruptions?" while videos load. It's YouTube's own notice, most likely a reaction to uBO Lite (not yet confirmed with the on/off test). Expected fix: Phase 8 (own engine + scriptlets); meanwhile a newer uBO Lite release might help.
+
+Report anything odd, and the agent will fix it before Phase 4.
 
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt on the new PC:**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 3.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 4.
 
 ## 7. uBlock Origin Lite test (V5): done
 

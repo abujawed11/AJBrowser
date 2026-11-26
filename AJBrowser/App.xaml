@@ -9,6 +9,8 @@
                 <ResourceDictionary Source="/AJBrowser;component/Themes/Shared.xaml" />
                 <!-- Swapped for Dark.xaml at runtime by ThemeService. Listed here so the XAML designer finds the brushes. -->
                 <ResourceDictionary Source="/AJBrowser;component/Themes/Light.xaml" />
+                <!-- Styles shared by the internal pages (History, Bookmarks, Settings). -->
+                <ResourceDictionary Source="/AJBrowser;component/Themes/Pages.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

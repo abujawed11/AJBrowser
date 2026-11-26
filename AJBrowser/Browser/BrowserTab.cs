@@ -83,6 +83,12 @@ public sealed class BrowserTab : IDisposable
     /// <summary>A new top-level navigation began (any earlier problem panel is now stale).</summary>
     public event EventHandler? NavigationStarted;
 
+    /// <summary>
+    /// A page finished loading (the URL is the final one, after redirects), or a single-page app changed its URL
+    /// without loading a new document (YouTube, Gmail…). Used to record history.
+    /// </summary>
+    public event EventHandler<string>? PageLoaded;
+
     /// <summary>Something the user must see instead of the page (error, crash, engine failure).</summary>
     public event EventHandler<PageProblem>? ProblemOccurred;
 
@@ -272,6 +278,7 @@ public sealed class BrowserTab : IDisposable
         _attachedEnvironment = environment;
         _core = webView.CoreWebView2;
         Configure(webView, _core);
+        _environment.RememberProfile(_core.Profile);
 
         // The ad blocker must be installed before the first page loads, or that page still shows ads.
         // Only the first WebViews actually wait (a few seconds on the very first run); never throws.
@@ -399,6 +406,10 @@ public sealed class BrowserTab : IDisposable
         if (sender is CoreWebView2 core)
         {
             UpdateState(core);
+            if (e.IsSuccess && !string.IsNullOrEmpty(core.Source))
+            {
+                PageLoaded?.Invoke(this, core.Source);
+            }
         }
 
         if (!e.IsSuccess)
@@ -412,7 +423,17 @@ public sealed class BrowserTab : IDisposable
         }
     }
 
-    private void OnSourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e) => UpdateState((CoreWebView2)sender!);
+    private void OnSourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
+    {
+        var core = (CoreWebView2)sender!;
+        UpdateState(core);
+
+        // Same-document change (history.pushState, #fragment): no NavigationCompleted follows, so report it here.
+        if (!e.IsNewDocument && !string.IsNullOrEmpty(core.Source))
+        {
+            PageLoaded?.Invoke(this, core.Source);
+        }
+    }
 
     private void OnHistoryChanged(object? sender, object e) => UpdateState((CoreWebView2)sender!);
 

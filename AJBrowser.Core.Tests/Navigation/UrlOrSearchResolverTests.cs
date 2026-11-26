@@ -139,7 +139,7 @@ public class UrlOrSearchResolverTests
     [Fact]
     public void Default_search_template_is_valid()
     {
-        var resolver = new UrlOrSearchResolver(BrowserDefaults.SearchUrlTemplate);
+        var resolver = new UrlOrSearchResolver(AJBrowser.Core.Settings.SearchEngines.Bing.Template);
 
         Assert.Equal(AddressKind.Search, resolver.Resolve("hello world").Kind);
     }

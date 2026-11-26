@@ -1,0 +1,115 @@
+<UserControl x:Class="AJBrowser.Views.Pages.HistoryPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AJBrowser.ViewModels.Pages"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:HistoryPageViewModel, IsDesignTimeCreatable=False}"
+             d:DesignWidth="900" d:DesignHeight="700"
+             Background="{DynamicResource ContentBackgroundBrush}">
+    <!-- DataContext: HistoryPageViewModel (ajbrowser://history). -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+        <StackPanel MaxWidth="860" Margin="32,24">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Clear browsing data…"
+                        Command="{Binding ToggleClearPanelCommand}" VerticalAlignment="Center" />
+                <TextBlock Text="History" Style="{StaticResource PageTitleStyle}" Margin="0" />
+            </DockPanel>
+
+            <!-- Clear browsing data -->
+            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0"
+                    Visibility="{Binding IsClearPanelOpen, Converter={StaticResource PageBoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="Clear browsing data" FontWeight="SemiBold" FontSize="16" />
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <TextBlock Text="Time range" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <ComboBox ItemsSource="{Binding ClearRanges}" SelectedItem="{Binding SelectedClearRange}"
+                                  DisplayMemberPath="Label" MinWidth="180" AutomationProperties.Name="Time range" />
+                    </StackPanel>
+                    <CheckBox Margin="0,12,0,0" IsChecked="{Binding AlsoClearSiteData}">
+                        <TextBlock TextWrapping="Wrap">Also clear cookies, site data and cached files (signs you out of most sites)</TextBlock>
+                    </CheckBox>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Content="Clear now" Command="{Binding ClearDataCommand}"
+                                Style="{DynamicResource AccentButtonStyle}" MinWidth="110" />
+                        <TextBlock Text="{Binding ClearStatus}" VerticalAlignment="Center" Margin="12,0,0,0"
+                                   Style="{StaticResource SecondaryTextStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Grid Margin="0,16,0,0">
+                <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalContentAlignment="Center"
+                         AutomationProperties.Name="Search history" />
+                <TextBlock Text="Search history" IsHitTestVisible="False" Margin="12,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SearchText}" Value="">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+
+            <TextBlock Text="{Binding EmptyText}" Margin="0,32,0,0" HorizontalAlignment="Center"
+                       Style="{StaticResource SecondaryTextStyle}"
+                       Visibility="{Binding IsEmpty, Converter={StaticResource PageBoolToVisibility}}" />
+
+            <!-- Day groups -->
+            <ItemsControl ItemsSource="{Binding Groups}" Focusable="False">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:HistoryDayGroup}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Label}" Style="{StaticResource SectionHeadingStyle}" />
+                            <Border Style="{StaticResource CardStyle}" Padding="4">
+                                <ItemsControl ItemsSource="{Binding Items}" Focusable="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:HistoryItemViewModel}">
+                                            <Border x:Name="Row" Background="Transparent" CornerRadius="4" Padding="8,4"
+                                                    Cursor="Hand" ToolTip="{Binding ToolTip}"
+                                                    MouseLeftButtonUp="Row_MouseLeftButtonUp"
+                                                    MouseUp="Row_MouseUp">
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Content="&#xE74D;"
+                                                            Style="{StaticResource RowIconButtonStyle}"
+                                                            Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Remove from history" AutomationProperties.Name="Remove from history" />
+                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Time}" Width="64" VerticalAlignment="Center"
+                                                               Style="{StaticResource SecondaryTextStyle}" />
+                                                    <TextBlock DockPanel.Dock="Left" Text="&#xE774;" FontFamily="{StaticResource IconFontFamily}"
+                                                               VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                                        <Run Text="{Binding Title, Mode=OneWay}" />
+                                                        <Run Text="  " />
+                                                        <Run Text="{Binding Host, Mode=OneWay}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                    </TextBlock>
+                                                </DockPanel>
+                                            </Border>
+                                            <DataTemplate.Triggers>
+                                                <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource ToolbarButtonHoverBrush}" />
+                                                </Trigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Button Content="Load more" Style="{StaticResource LinkButtonStyle}" HorizontalAlignment="Center" Margin="0,16,0,0"
+                    Command="{Binding LoadMoreCommand}"
+                    Visibility="{Binding HasMore, Converter={StaticResource PageBoolToVisibility}}" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,47 +1,83 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using AJBrowser.Browser;
 using AJBrowser.Core.Infrastructure;
 using AJBrowser.Core.Logging;
+using AJBrowser.Core.Navigation;
+using AJBrowser.Core.Persistence;
+using AJBrowser.Core.Settings;
 using AJBrowser.Core.Tabs;
 using AJBrowser.Services;
+using AJBrowser.ViewModels.Pages;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace AJBrowser.ViewModels;
 
+/// <summary>A bookmark or folder on the bookmarks bar (folders carry their contents for the drop-down menu).</summary>
+public sealed class BookmarkNodeViewModel(Bookmark bookmark, IReadOnlyList<BookmarkNodeViewModel> children)
+{
+    public Bookmark Bookmark { get; } = bookmark;
+
+    public string Title => Bookmark.Title;
+
+    public bool IsFolder => Bookmark.IsFolder;
+
+    public IReadOnlyList<BookmarkNodeViewModel> Children { get; } = children;
+
+    public string ToolTip => IsFolder ? Title : $"{Title}\n{Bookmark.Url}";
+
+    public string Glyph => IsFolder ? "" : "";
+}
+
 /// <summary>
 /// State and commands for the main window: the tab list, the selected tab, closed-tab history, fullscreen,
-/// theme and debug tools. Each tab's own state lives in <see cref="TabViewModel"/>.
+/// theme, bookmarks bar, internal pages, session saving and debug tools. Each tab's own state lives in <see cref="TabViewModel"/>.
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
-    private readonly ThemeService _theme;
+    private readonly SettingsStore _settings;
     private readonly ShellService _shell;
-    private readonly ExtensionManager _adBlocker;
+    private readonly BookmarkService _bookmarks;
+    private readonly SessionService _session;
     private readonly Func<TabViewModel> _createTab;
     private readonly AppLogger _log;
     private readonly ClosedTabStack _closedTabs = new();
 
-    public MainWindowViewModel(AppPaths paths, ThemeService theme, ShellService shell, ExtensionManager adBlocker, Func<TabViewModel> createTab, AppLogger log)
+    public MainWindowViewModel(
+        AppPaths paths,
+        SettingsStore settings,
+        ShellService shell,
+        ExtensionManager adBlocker,
+        BookmarkService bookmarks,
+        SessionService session,
+        Func<TabViewModel> createTab,
+        AppLogger log)
     {
-        _theme = theme;
+        _settings = settings;
         _shell = shell;
-        _adBlocker = adBlocker;
-        _adBlocker.StateChanged += OnAdBlockerStateChanged;
+        _bookmarks = bookmarks;
+        _session = session;
         _createTab = createTab;
         _log = log;
         DataFolder = paths.Root;
+        AdBlock = new AdBlockViewModel(adBlocker, () => SelectedTab, url => OpenTab(url, select: true, opener: SelectedTab));
+
+        _settings.Changed += OnSettingsChanged;
+        _bookmarks.Changed += OnBookmarksChanged;
+        Tabs.CollectionChanged += OnTabsCollectionChanged;
     }
 
     public ObservableCollection<TabViewModel> Tabs { get; } = [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsFullScreen), nameof(IsChromeVisible))]
+    [NotifyPropertyChangedFor(nameof(IsFullScreen), nameof(IsChromeVisible), nameof(IsBookmarksBarShown))]
     public partial TabViewModel? SelectedTab { get; set; }
 
     /// <summary>F11 fullscreen (the user's choice), as opposed to a page's video going fullscreen.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsFullScreen), nameof(IsChromeVisible))]
+    [NotifyPropertyChangedFor(nameof(IsFullScreen), nameof(IsChromeVisible), nameof(IsBookmarksBarShown))]
     public partial bool IsAppFullScreen { get; set; }
 
     /// <summary>The window should cover the whole screen (F11, or the selected page's HTML5 fullscreen).</summary>
@@ -56,53 +92,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public string DataFolder { get; }
 
-    public bool IsSystemTheme => _theme.Theme == AppTheme.System;
-    public bool IsLightTheme => _theme.Theme == AppTheme.Light;
-    public bool IsDarkTheme => _theme.Theme == AppTheme.Dark;
+    /// <summary>The toolbar shield and its panel (and the switch on the Settings page).</summary>
+    public AdBlockViewModel AdBlock { get; }
 
-    /// <summary>The ad blocker is installed and can be switched (its menu items are greyed out otherwise).</summary>
-    public bool IsAdBlockAvailable => _adBlocker.IsAvailable;
+    public bool IsSystemTheme => _settings.Current.Theme == ThemeSetting.System;
+    public bool IsLightTheme => _settings.Current.Theme == ThemeSetting.Light;
+    public bool IsDarkTheme => _settings.Current.Theme == ThemeSetting.Dark;
 
-    /// <summary>
-    /// Ads are being blocked. Bound two-way to the switch in the shield panel: setting it switches the ad blocker.
-    /// The getter always reports the real state, so a failed switch snaps back.
-    /// </summary>
-    public bool IsAdBlockEnabled
-    {
-        get => _adBlocker.IsAvailable && _adBlocker.IsEnabled;
-        set
-        {
-            if (value != IsAdBlockEnabled && ToggleAdBlockCommand.CanExecute(null))
-            {
-                ToggleAdBlockCommand.Execute(null); // raises PropertyChanged when done
-            }
-            else
-            {
-                OnPropertyChanged(); // nothing to do (or busy): put the switch back where it belongs
-            }
-        }
-    }
+    /// <summary>Top-level bookmarks and folders.</summary>
+    public ObservableCollection<BookmarkNodeViewModel> BookmarksBarItems { get; } = [];
 
-    /// <summary>Headline in the shield panel.</summary>
-    public string AdBlockHeadline =>
-        !_adBlocker.IsAvailable ? "Ad blocker unavailable"
-        : _adBlocker.IsEnabled ? "Ads and trackers are blocked"
-        : "Ads are not blocked";
+    public bool IsBookmarksBarShown => _settings.Current.ShowBookmarksBar && IsChromeVisible;
 
-    /// <summary>Second line in the shield panel.</summary>
-    public string AdBlockDetail =>
-        !_adBlocker.IsAvailable ? "It's still starting, or it failed to load (details in the log: ⋯ → Open data folder)."
-        : _adBlocker.IsEnabled ? "On every site. Turn it off if a site doesn't work properly."
-        : "Turn it on to block ads and trackers on every site.";
-
-    /// <summary>Shield button tooltip.</summary>
-    public string AdBlockToolTip =>
-        !_adBlocker.IsAvailable ? "Ad blocker unavailable"
-        : _adBlocker.IsEnabled ? "Ad blocker: on"
-        : "Ad blocker: off";
-
-    /// <summary>Small print in the shield panel, for example "uBlock Origin Lite 2026.1124.1811".</summary>
-    public string AdBlockEngine => _adBlocker.IsAvailable ? $"uBlock Origin Lite {_adBlocker.Version}" : "uBlock Origin Lite";
+    public bool IsBookmarksBarEmpty => BookmarksBarItems.Count == 0;
 
     public bool IsDebugBuild =>
 #if DEBUG
@@ -117,23 +119,49 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>The last tab was closed: the window should close.</summary>
     public event EventHandler? CloseWindowRequested;
 
-    // ---------------------------------------------------------------- opening tabs
+    // ---------------------------------------------------------------- startup
 
-    /// <summary>Opens the startup tabs: the given URLs, or the home page.</summary>
-    public void OpenStartupTabs(IReadOnlyList<Uri> urls)
+    /// <summary>
+    /// Opens the startup tabs: the saved session (if "Continue where you left off" is on), then any URLs from the
+    /// command line; or the home page if there's nothing else. Restored background tabs load when first selected.
+    /// </summary>
+    public async Task OpenStartupTabsAsync(IReadOnlyList<Uri> commandLineUrls)
     {
-        _log.Info($"Opening {Math.Max(1, urls.Count)} startup tab(s)");
-        if (urls.Count == 0)
+        if (_settings.Current.Startup == StartupBehavior.RestoreSession)
         {
-            OpenTab(null, select: true);
-            return;
+            var saved = await _session.LoadAsync();
+            var restorable = saved.Where(t => Uri.TryCreate(t.Url, UriKind.Absolute, out _)).ToList();
+            if (restorable.Count > 0)
+            {
+                _log.Info($"Restoring {restorable.Count} tab(s) from the last session");
+                foreach (var savedTab in restorable)
+                {
+                    var tab = _createTab();
+                    tab.StartDeferred(new Uri(savedTab.Url), savedTab.Title);
+                    InsertTab(tab, Tabs.Count, select: false);
+                }
+
+                // Selecting the active tab is what makes it load.
+                var active = restorable.FindIndex(t => t.IsActive);
+                SelectedTab = Tabs[active >= 0 ? active : 0];
+            }
         }
 
-        for (var i = 0; i < urls.Count; i++)
+        for (var i = 0; i < commandLineUrls.Count; i++)
         {
-            OpenTab(urls[i], select: i == 0);
+            OpenTab(commandLineUrls[i], select: i == 0);
         }
+
+        if (Tabs.Count == 0)
+        {
+            _log.Info("Opening the home page");
+            OpenTab(null, select: true);
+        }
+
+        ScheduleSessionSave();
     }
+
+    // ---------------------------------------------------------------- opening tabs
 
     /// <summary>Ctrl+T or the "+" button: a new tab with the home page, address bar focused.</summary>
     [RelayCommand]
@@ -154,20 +182,23 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private TabViewModel AddTab(bool select, TabViewModel? opener, int? index = null)
     {
         var tab = _createTab();
+        var position = index ?? (opener is not null ? Tabs.IndexOf(opener) + 1 : Tabs.Count);
+        InsertTab(tab, position, select || SelectedTab is null);
+        return tab;
+    }
+
+    private void InsertTab(TabViewModel tab, int position, bool select)
+    {
         tab.NewTabRequested += OnTabNewTabRequested;
         tab.PopupRequested += OnTabPopupRequested;
         tab.CloseRequested += OnTabCloseRequested;
         tab.PropertyChanged += OnTabPropertyChanged;
 
-        var position = index ?? (opener is not null ? Tabs.IndexOf(opener) + 1 : Tabs.Count);
         Tabs.Insert(Math.Clamp(position, 0, Tabs.Count), tab);
-
-        if (select || SelectedTab is null)
+        if (select)
         {
             SelectedTab = tab;
         }
-
-        return tab;
     }
 
     private void OnTabNewTabRequested(object? sender, NewTabRequest request) =>
@@ -196,12 +227,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void OnTabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private void OnTabPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (sender == SelectedTab && e.PropertyName == nameof(TabViewModel.IsPageFullScreen))
         {
             OnPropertyChanged(nameof(IsFullScreen));
             OnPropertyChanged(nameof(IsChromeVisible));
+            OnPropertyChanged(nameof(IsBookmarksBarShown));
+        }
+
+        // Anything the saved session stores (address, title, page kind) changed.
+        if (e.PropertyName is nameof(TabViewModel.Title) or nameof(TabViewModel.AddressText) or nameof(TabViewModel.InternalPageContent))
+        {
+            ScheduleSessionSave();
         }
     }
 
@@ -216,6 +254,76 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             newValue.IsSelected = true;
         }
+
+        ScheduleSessionSave();
+    }
+
+    // ---------------------------------------------------------------- internal pages and bookmarks
+
+    [RelayCommand]
+    private void ShowHistory() => OpenInternalPage(InternalPage.History);
+
+    [RelayCommand]
+    private void ShowBookmarks() => OpenInternalPage(InternalPage.Bookmarks);
+
+    [RelayCommand]
+    private void ShowSettings() => OpenInternalPage(InternalPage.Settings);
+
+    /// <summary>Ctrl+Shift+Delete: the History page with "Clear browsing data" open.</summary>
+    [RelayCommand]
+    private void ShowClearBrowsingData()
+    {
+        OpenInternalPage(InternalPage.History);
+        (SelectedTab?.InternalPageContent as HistoryPageViewModel)?.OpenClearPanel();
+    }
+
+    /// <summary>Switches to a tab already showing the page, or opens it in a new tab (like Chrome's settings).</summary>
+    public void OpenInternalPage(InternalPage page)
+    {
+        var existing = Tabs.FirstOrDefault(t => t.InternalPageContent?.Kind == page);
+        if (existing is not null)
+        {
+            SelectedTab = existing;
+            return;
+        }
+
+        OpenTab(new Uri(InternalPages.ToUrl(page)), select: true, opener: SelectedTab);
+    }
+
+    /// <summary>Ctrl+Shift+B.</summary>
+    [RelayCommand]
+    private void ToggleBookmarksBar() => _settings.Update(s => s with { ShowBookmarksBar = !s.ShowBookmarksBar });
+
+    /// <summary>A bookmark on the bar (or in one of its folder menus) was clicked.</summary>
+    public void OpenBookmark(BookmarkNodeViewModel node, OpenTarget target)
+    {
+        if (node.IsFolder || !Uri.TryCreate(node.Bookmark.Url, UriKind.Absolute, out var uri))
+        {
+            return;
+        }
+
+        if (SelectedTab is { } tab)
+        {
+            tab.Open(uri, target);
+        }
+        else
+        {
+            OpenTab(uri, select: true);
+        }
+    }
+
+    private void OnBookmarksChanged(object? sender, EventArgs e)
+    {
+        BookmarkNodeViewModel Build(Bookmark b) =>
+            new(b, b.IsFolder ? _bookmarks.ChildrenOf(b.Id).Select(Build).ToList() : []);
+
+        BookmarksBarItems.Clear();
+        foreach (var bookmark in _bookmarks.ChildrenOf(null))
+        {
+            BookmarksBarItems.Add(Build(bookmark));
+        }
+
+        OnPropertyChanged(nameof(IsBookmarksBarEmpty));
     }
 
     // ---------------------------------------------------------------- closing tabs
@@ -302,6 +410,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public void RequestFocusAddressBar() => FocusAddressBarRequested?.Invoke(this, EventArgs.Empty);
 
+    // ---------------------------------------------------------------- session
+
+    private void OnTabsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => ScheduleSessionSave();
+
+    private void ScheduleSessionSave() => _session.ScheduleSave(SessionSnapshot);
+
+    /// <summary>The open tabs as they should be restored next time.</summary>
+    private IReadOnlyList<SessionTab> SessionSnapshot() =>
+        Tabs.Where(t => !string.IsNullOrEmpty(t.Url))
+            .Select(t => new SessionTab(t.Url!, t.Title, t == SelectedTab))
+            .ToList();
+
     // ---------------------------------------------------------------- window-level commands
 
     [RelayCommand]
@@ -315,47 +435,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         IsAppFullScreen = !IsAppFullScreen;
     }
 
+    /// <summary>⋯ → Theme. The theme itself is applied by AppServices when the setting changes.</summary>
     [RelayCommand]
-    private void SetTheme(AppTheme theme)
+    private void SetTheme(ThemeSetting theme)
     {
-        _theme.Apply(theme);
+        _settings.Update(s => s with { Theme = theme });
         _log.Info($"Theme changed to {theme}");
+    }
+
+    private void OnSettingsChanged(object? sender, AppSettings previous)
+    {
         OnPropertyChanged(nameof(IsSystemTheme));
         OnPropertyChanged(nameof(IsLightTheme));
         OnPropertyChanged(nameof(IsDarkTheme));
-    }
-
-    /// <summary>The switch in the shield panel. The current page reloads so the change shows at once.</summary>
-    [RelayCommand(CanExecute = nameof(IsAdBlockAvailable))]
-    private async Task ToggleAdBlock()
-    {
-        await _adBlocker.SetEnabledAsync(!_adBlocker.IsEnabled);
-        if (SelectedTab is { } tab)
-        {
-            await tab.ReloadCommand.ExecuteAsync(null);
-        }
-    }
-
-    /// <summary>Shield panel → Ad blocker settings: uBlock Origin Lite's own dashboard, in a new tab.</summary>
-    [RelayCommand(CanExecute = nameof(IsAdBlockAvailable))]
-    private void OpenAdBlockSettings()
-    {
-        if (_adBlocker.SettingsPageUrl is { } url)
-        {
-            OpenTab(url, select: true, opener: SelectedTab);
-        }
-    }
-
-    private void OnAdBlockerStateChanged(object? sender, EventArgs e)
-    {
-        OnPropertyChanged(nameof(IsAdBlockAvailable));
-        OnPropertyChanged(nameof(IsAdBlockEnabled));
-        OnPropertyChanged(nameof(AdBlockHeadline));
-        OnPropertyChanged(nameof(AdBlockDetail));
-        OnPropertyChanged(nameof(AdBlockToolTip));
-        OnPropertyChanged(nameof(AdBlockEngine));
-        ToggleAdBlockCommand.NotifyCanExecuteChanged();
-        OpenAdBlockSettingsCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(IsBookmarksBarShown));
     }
 
     [RelayCommand]
@@ -367,9 +460,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         throw new InvalidOperationException(
             "Test exception from the debug button. This URL token must be redacted in the log: https://example.com/video.mp4?token=SHOULD_NOT_APPEAR");
 
+    /// <summary>App exit: save the session one last time, then close every tab.</summary>
     public void Dispose()
     {
-        _adBlocker.StateChanged -= OnAdBlockerStateChanged;
+        _session.SaveNowAndStop(SessionSnapshot());
+
+        _settings.Changed -= OnSettingsChanged;
+        _bookmarks.Changed -= OnBookmarksChanged;
+        Tabs.CollectionChanged -= OnTabsCollectionChanged;
+        AdBlock.Dispose();
         foreach (var tab in Tabs)
         {
             tab.Dispose();

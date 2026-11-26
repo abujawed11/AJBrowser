@@ -63,6 +63,8 @@ public partial class MainWindow : Window
                     case >= Key.D1 and <= Key.D9: vm.SelectTabByNumber(key - Key.D0); return true;
                     case >= Key.NumPad1 and <= Key.NumPad9: vm.SelectTabByNumber(key - Key.NumPad0); return true;
                     case Key.L: FocusAddressBar(); return true;
+                    case Key.H: vm.ShowHistoryCommand.Execute(null); return true;
+                    case Key.D: tab?.BookmarkPageCommand.Execute(null); return true;
                     case Key.R: tab?.ReloadCommand.Execute(null); return true;
                     case Key.F: OpenFind(); return true;
                     case Key.P: tab?.PrintCommand.Execute(null); return true;
@@ -77,6 +79,9 @@ public partial class MainWindow : Window
                 switch (key)
                 {
                     case Key.T: vm.ReopenClosedTabCommand.Execute(null); return true;
+                    case Key.O: vm.ShowBookmarksCommand.Execute(null); return true;
+                    case Key.B: vm.ToggleBookmarksBarCommand.Execute(null); return true;
+                    case Key.Delete: vm.ShowClearBrowsingDataCommand.Execute(null); return true;
                     case Key.Tab: vm.PreviousTabCommand.Execute(null); return true;
                     case Key.OemPlus: tab?.ZoomInCommand.Execute(null); return true; // Ctrl+Shift+= on some layouts
                 }
@@ -210,6 +215,53 @@ public partial class MainWindow : Window
     }
 
     private void FindMenuItem_Click(object sender, RoutedEventArgs e) => OpenFind();
+
+    // ---------------------------------------------------------------- bookmarks bar
+
+    /// <summary>A bookmark opens in the current tab; a folder drops down a menu of its contents.</summary>
+    private void BookmarkBarItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: BookmarkNodeViewModel node } button)
+        {
+            return;
+        }
+
+        if (!node.IsFolder)
+        {
+            _viewModel.OpenBookmark(node, OpenTarget.CurrentTab);
+            return;
+        }
+
+        var menu = new ContextMenu
+        {
+            ItemsSource = node.Children.Count > 0 ? node.Children : [new BookmarkNodeViewModel(new Core.Persistence.Bookmark(0, null, "(empty)", null, 0, default), [])],
+            ItemContainerStyle = (Style)FindResource("BookmarkMenuItemStyle"),
+            FontFamily = (System.Windows.Media.FontFamily)FindResource("UiFontFamily"),
+            FontSize = (double)FindResource("BodyFontSize"),
+            PlacementTarget = button,
+            Placement = PlacementMode.Bottom,
+        };
+        menu.IsOpen = true;
+    }
+
+    /// <summary>Middle-click on a bookmark: open it in a background tab.</summary>
+    private void BookmarkBarItem_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Middle && sender is FrameworkElement { DataContext: BookmarkNodeViewModel { IsFolder: false } node })
+        {
+            _viewModel.OpenBookmark(node, OpenTarget.NewBackgroundTab);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>A bookmark inside a bookmarks-bar folder menu (folders open submenus and don't raise Click).</summary>
+    private void BookmarkMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: BookmarkNodeViewModel node } && ReferenceEquals(e.OriginalSource, sender))
+        {
+            _viewModel.OpenBookmark(node, OpenTarget.CurrentTab);
+        }
+    }
 
     // ---------------------------------------------------------------- ad blocker panel
 

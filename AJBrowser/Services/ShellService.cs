@@ -13,6 +13,14 @@ public sealed class ShellService
         Process.Start(startInfo)?.Dispose();
     }
 
+    /// <summary>Opens a text file (for example the third-party notices) in Notepad, which every Windows PC has.</summary>
+    public void OpenTextFile(string path)
+    {
+        var startInfo = new ProcessStartInfo("notepad.exe") { UseShellExecute = false };
+        startInfo.ArgumentList.Add(path);
+        Process.Start(startInfo)?.Dispose();
+    }
+
     /// <summary>Opens a web page in the user's default browser. Only http(s) URLs are allowed.</summary>
     public void OpenUrl(Uri url)
     {

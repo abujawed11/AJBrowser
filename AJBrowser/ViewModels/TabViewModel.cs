@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Media;
 using AJBrowser.Browser;
-using AJBrowser.Core.Logging;
 using AJBrowser.Core.Navigation;
 using AJBrowser.Core.Security;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -13,39 +12,47 @@ namespace AJBrowser.ViewModels;
 public sealed record NewTabRequest(Uri Uri, bool Select);
 
 /// <summary>
-/// UI state for one tab: address bar text, title, favicon, loading, back/forward, zoom, find, and the problem panel.
-/// Think of it as the React state + handlers for a tab; <see cref="BrowserTab"/> is the "API" it calls.
+/// UI state for one tab: address bar text, title, favicon, loading, back/forward, zoom, find, the problem panel,
+/// the bookmark star and address-bar suggestions. Think of it as the React state + handlers for a tab;
+/// <see cref="BrowserTab"/> is the "API" it calls.
+/// <para>
+/// A tab shows either a web page (the WebView2 in <see cref="BrowserView"/>) or an internal page
+/// (<see cref="InternalPageContent"/>: History, Bookmarks, Settings). The web engine starts only when the tab
+/// first needs it, so restored background tabs and internal pages cost almost nothing.
+/// </para>
 /// </summary>
-public sealed partial class TabViewModel : ObservableObject, IDisposable
+public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageHost
 {
     private const string AppName = "AJBrowser";
     private const string NewTabTitle = "New tab";
 
     private readonly BrowserTab _browser;
-    private readonly UrlOrSearchResolver _resolver;
-    private readonly Uri _homePage;
-    private readonly AppLogger _log;
+    private readonly TabServices _services;
 
     private string? _lastUrl;
     private bool _isEditingAddress;
     private bool _isAddressDirty;   // the user typed something that hasn't been navigated to or reverted
     private bool _isSettingAddress; // we are changing AddressText ourselves, not the user
-    private bool _started;
+    private bool _started;          // the web engine has been started (or adopted by a popup)
+    private Uri? _deferredUri;      // restored background tab: load this when the tab is first shown
+    private string? _recordedUrl;   // last URL written to history, and the title written with it
+    private string? _recordedTitle;
 
-    public TabViewModel(BrowserTab browser, UrlOrSearchResolver resolver, Uri homePage, AppLogger log)
+    public TabViewModel(BrowserTab browser, TabServices services)
     {
         _browser = browser;
-        _resolver = resolver;
-        _homePage = homePage;
-        _log = log;
+        _services = services;
+        Suggestions = new SuggestionsViewModel(services.History, services.Bookmarks, services.Log);
 
         _browser.StateChanged += OnBrowserStateChanged;
         _browser.NavigationStarted += OnBrowserNavigationStarted;
+        _browser.PageLoaded += OnBrowserPageLoaded;
         _browser.ProblemOccurred += OnBrowserProblemOccurred;
         _browser.PopupRequested += OnBrowserPopupRequested;
         _browser.PopupBlocked += OnBrowserPopupBlocked;
         _browser.OpenInNewTabRequested += OnBrowserOpenInNewTabRequested;
         _browser.CloseRequested += OnBrowserCloseRequested;
+        _services.Bookmarks.Changed += OnBookmarksChanged;
     }
 
     /// <summary>A link wants a new tab (handled by <see cref="MainWindowViewModel"/>).</summary>
@@ -60,8 +67,12 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
     /// <summary>The page element to show in the window (hosts the WebView2 control).</summary>
     public object BrowserView => _browser.View;
 
-    /// <summary>Current URL, for the closed-tabs list.</summary>
-    public string? Url => _browser.Url;
+    /// <summary>What this tab shows, for the session and the closed-tabs list: the web URL, an ajbrowser:// address, or the not-yet-loaded restored URL.</summary>
+    public string? Url =>
+        InternalPageContent is { } page ? InternalPages.ToUrl(page.Kind)
+        : _browser.Url ?? _deferredUri?.AbsoluteUri;
+
+    public SuggestionsViewModel Suggestions { get; }
 
     // ---------------------------------------------------------------- bindable state
 
@@ -89,7 +100,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
 
     /// <summary>Set by <see cref="MainWindowViewModel"/>: this is the tab being shown.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsPageShown))]
+    [NotifyPropertyChangedFor(nameof(IsPageShown), nameof(IsInternalPageShown))]
     public partial bool IsSelected { get; set; }
 
     /// <summary>When set, the page is hidden and a message panel is shown instead.</summary>
@@ -99,11 +110,20 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
 
     public bool HasProblem => Problem is not null;
 
+    /// <summary>The internal page shown instead of the web page, or null for a web page.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsInternal), nameof(IsPageShown), nameof(IsInternalPageShown), nameof(CanBookmark))]
+    public partial IInternalPage? InternalPageContent { get; set; }
+
+    public bool IsInternal => InternalPageContent is not null;
+
     /// <summary>
-    /// Only the selected tab's WebView is visible, and it's hidden while a problem panel is shown: WPF can't
-    /// draw on top of a WebView2 ("airspace", plan §3), so the panel and the page take turns.
+    /// Only the selected tab's WebView is visible, and it's hidden while a problem panel or internal page is shown:
+    /// WPF can't draw on top of a WebView2 ("airspace", plan §3), so they take turns.
     /// </summary>
-    public bool IsPageShown => IsSelected && Problem is null;
+    public bool IsPageShown => IsSelected && Problem is null && !IsInternal;
+
+    public bool IsInternalPageShown => IsSelected && IsInternal;
 
     [ObservableProperty]
     public partial bool IsPageFullScreen { get; set; }
@@ -131,16 +151,49 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial string FindStatusText { get; set; } = string.Empty;
 
+    /// <summary>The current web page is bookmarked (filled star).</summary>
+    [ObservableProperty]
+    public partial bool IsBookmarked { get; set; }
+
+    /// <summary>There is a web page to bookmark.</summary>
+    public bool CanBookmark => !IsInternal && !string.IsNullOrEmpty(_browser.Url);
+
+    /// <summary>The star's panel: set while it's open.</summary>
+    [ObservableProperty]
+    public partial BookmarkEditorViewModel? BookmarkEditor { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsBookmarkEditorOpen { get; set; }
+
     public string WindowTitle => string.IsNullOrWhiteSpace(Title) ? AppName : $"{Title} - {AppName}";
 
     // ---------------------------------------------------------------- lifecycle
 
-    /// <summary>Starts the web engine and loads <paramref name="uri"/> (or the home page).</summary>
+    /// <summary>Loads <paramref name="uri"/> (or the home page): a web page starts the engine; an ajbrowser:// address shows that page.</summary>
     public async Task StartAsync(Uri? uri = null)
     {
-        _started = true;
-        _browser.Navigate(uri ?? _homePage); // queued until the engine is ready
-        await _browser.InitializeAsync();
+        var target = uri ?? _services.HomePage();
+        if (InternalPages.TryParse(target.AbsoluteUri) is { } page)
+        {
+            ShowInternalPage(page);
+            return;
+        }
+
+        await StartEngineAsync(target);
+    }
+
+    /// <summary>A restored background tab: shows its title now, loads the page when the tab is first selected.</summary>
+    public void StartDeferred(Uri uri, string title)
+    {
+        if (InternalPages.TryParse(uri.AbsoluteUri) is { } page)
+        {
+            ShowInternalPage(page); // internal pages are cheap: show right away
+            return;
+        }
+
+        _deferredUri = uri;
+        Title = string.IsNullOrWhiteSpace(title) ? UrlDisplay.ForAddressBar(uri.AbsoluteUri) : title;
+        SetAddress(UrlDisplay.ForAddressBar(uri.AbsoluteUri));
     }
 
     /// <summary>Starts this (new, never navigated) tab as the window a page opened, so window.opener keeps working.</summary>
@@ -156,25 +209,136 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
         await request.OpenInAsync(_browser);
     }
 
-    public void FocusPage() => _browser.FocusPage();
+    public void FocusPage()
+    {
+        if (!IsInternal)
+        {
+            _browser.FocusPage();
+        }
+    }
+
+    private async Task StartEngineAsync(Uri uri)
+    {
+        _deferredUri = null;
+        _started = true;
+        _browser.Navigate(uri); // queued until the engine is ready
+        await _browser.InitializeAsync();
+    }
+
+    partial void OnIsSelectedChanged(bool value)
+    {
+        if (!value)
+        {
+            return;
+        }
+
+        if (_deferredUri is { } deferred)
+        {
+            _ = StartEngineAsync(deferred); // never throws: problems show in the page area
+        }
+
+        InternalPageContent?.Activate();
+    }
+
+    // ---------------------------------------------------------------- navigation (also IPageHost for internal pages)
+
+    /// <summary>Opens a web address or an ajbrowser:// page here or in a new tab.</summary>
+    public void Open(Uri uri, OpenTarget target)
+    {
+        if (target != OpenTarget.CurrentTab)
+        {
+            NewTabRequested?.Invoke(this, new NewTabRequest(uri, Select: target == OpenTarget.NewForegroundTab));
+            return;
+        }
+
+        if (InternalPages.TryParse(uri.AbsoluteUri) is { } page)
+        {
+            ShowInternalPage(page);
+        }
+        else
+        {
+            Navigate(uri);
+        }
+    }
+
+    /// <summary>Shows an internal page in this tab (the web page, if any, stays loaded behind it).</summary>
+    public void ShowInternalPage(InternalPage page)
+    {
+        Suggestions.Close();
+        _isAddressDirty = false;
+        if (InternalPageContent?.Kind == page)
+        {
+            InternalPageContent.Activate();
+        }
+        else
+        {
+            InternalPageContent?.Dispose();
+            InternalPageContent = _services.CreatePage(page, this);
+        }
+
+        Problem = null;
+        IsFindBarOpen = false;
+        Title = InternalPageContent.Title;
+        Favicon = null;
+        IsLoading = false;
+        CanGoBack = _started && !string.IsNullOrEmpty(_browser.Url);
+        CanGoForward = false;
+        IsBookmarked = false;
+        SetAddress(InternalPages.ToUrl(page));
+    }
+
+    /// <summary>Back from an internal page to the web page underneath.</summary>
+    private void LeaveInternalPage()
+    {
+        if (InternalPageContent is null)
+        {
+            return;
+        }
+
+        InternalPageContent.Dispose();
+        InternalPageContent = null;
+        _lastUrl = null; // force the address bar to refresh from the browser
+        OnBrowserStateChanged(this, EventArgs.Empty);
+    }
+
+    private void Navigate(Uri uri)
+    {
+        Problem = null;
+        if (IsInternal)
+        {
+            InternalPageContent!.Dispose();
+            InternalPageContent = null;
+            _lastUrl = null;
+        }
+
+        if (!_started)
+        {
+            _ = StartEngineAsync(uri); // never throws
+        }
+        else
+        {
+            _browser.Navigate(uri);
+        }
+    }
 
     // ---------------------------------------------------------------- address bar (called by the AddressBar control)
 
     public void BeginAddressEdit()
     {
         _isEditingAddress = true;
-        if (!_isAddressDirty)
+        if (!_isAddressDirty && !IsInternal)
         {
-            SetAddress(_browser.Url ?? string.Empty); // show the full URL while editing
+            SetAddress(_browser.Url ?? _deferredUri?.AbsoluteUri ?? string.Empty); // show the full URL while editing
         }
     }
 
     public void EndAddressEdit()
     {
         _isEditingAddress = false;
+        Suggestions.Close();
         if (!_isAddressDirty)
         {
-            SetAddress(UrlDisplay.ForAddressBar(_browser.Url));
+            SetAddress(CurrentDisplayAddress());
         }
     }
 
@@ -183,14 +347,28 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
         if (!_isSettingAddress && _isEditingAddress)
         {
             _isAddressDirty = true;
+            Suggestions.Update(value);
         }
     }
 
-    /// <summary>Enter in the address bar.</summary>
+    /// <summary>Enter in the address bar: the highlighted suggestion, an ajbrowser:// page, a URL or a search.</summary>
     [RelayCommand]
     private void NavigateToAddress()
     {
-        var resolution = _resolver.Resolve(AddressText);
+        if (Suggestions.Selected is { } suggestion)
+        {
+            NavigateToSuggestion(suggestion);
+            return;
+        }
+
+        Suggestions.Close();
+        if (InternalPages.TryParse(AddressText) is { } page)
+        {
+            ShowInternalPage(page);
+            return;
+        }
+
+        var resolution = _services.Resolver.Resolve(AddressText);
         switch (resolution.Kind)
         {
             case AddressKind.Url or AddressKind.Search:
@@ -202,7 +380,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
                 break;
 
             case AddressKind.Blocked:
-                _log.Info($"Blocked address bar input: {Redactor.Text(AddressText)}");
+                _services.Log.Info($"Blocked address bar input: {Redactor.Text(AddressText)}");
                 break;
 
             case AddressKind.Empty:
@@ -211,18 +389,48 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>A suggestion was clicked, or highlighted and Enter pressed.</summary>
+    public void NavigateToSuggestion(SuggestionItem suggestion)
+    {
+        Suggestions.Close();
+        if (!Uri.TryCreate(suggestion.Url, UriKind.Absolute, out var uri))
+        {
+            return;
+        }
+
+        SetAddress(uri.AbsoluteUri);
+        _isAddressDirty = true;
+        Navigate(uri);
+        _browser.FocusPage();
+    }
+
     /// <summary>Esc in the address bar: throw away the edit.</summary>
     [RelayCommand]
     private void RevertAddress()
     {
+        Suggestions.Close();
         _isAddressDirty = false;
-        SetAddress(_isEditingAddress ? _browser.Url ?? string.Empty : UrlDisplay.ForAddressBar(_browser.Url));
+        SetAddress(_isEditingAddress && !IsInternal ? _browser.Url ?? _deferredUri?.AbsoluteUri ?? string.Empty : CurrentDisplayAddress());
     }
+
+    private string CurrentDisplayAddress() =>
+        InternalPageContent is { } page ? InternalPages.ToUrl(page.Kind)
+        : UrlDisplay.ForAddressBar(_browser.Url ?? _deferredUri?.AbsoluteUri);
 
     // ---------------------------------------------------------------- toolbar commands
 
     [RelayCommand(CanExecute = nameof(CanGoBack))]
-    private void GoBack() => _browser.GoBack();
+    private void GoBack()
+    {
+        if (IsInternal)
+        {
+            LeaveInternalPage(); // back to the web page behind the internal page
+        }
+        else
+        {
+            _browser.GoBack();
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(CanGoForward))]
     private void GoForward() => _browser.GoForward();
@@ -243,7 +451,11 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task Reload()
     {
-        if (HasProblem)
+        if (InternalPageContent is { } page)
+        {
+            page.Activate();
+        }
+        else if (HasProblem)
         {
             await Retry();
         }
@@ -256,10 +468,16 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
     public void Stop() => _browser.Stop();
 
     [RelayCommand]
-    private void Home() => Navigate(_homePage);
+    private void Home() => Open(_services.HomePage(), OpenTarget.CurrentTab);
 
     [RelayCommand]
-    private void Print() => _browser.Print();
+    private void Print()
+    {
+        if (!IsInternal)
+        {
+            _browser.Print();
+        }
+    }
 
     [RelayCommand]
     private void ZoomIn() => _browser.SetZoom(ZoomLevels.ZoomIn(ZoomFactor));
@@ -307,15 +525,57 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
         NewTabRequested?.Invoke(this, new NewTabRequest(uri, Select: true));
     }
 
-    private void Navigate(Uri uri)
+    // ---------------------------------------------------------------- bookmarks (star button, Ctrl+D)
+
+    /// <summary>The star: bookmarks the page if needed, then opens the edit panel.</summary>
+    [RelayCommand]
+    private async Task BookmarkPage()
     {
-        Problem = null;
-        _browser.Navigate(uri);
+        if (!CanBookmark || _browser.Url is not { } url)
+        {
+            return;
+        }
+
+        var existing = _services.Bookmarks.FindByUrl(url);
+        var isNew = existing is null;
+        existing ??= await _services.Bookmarks.AddAsync(parentId: null, Title, url);
+        if (existing is null)
+        {
+            return; // saving failed (logged)
+        }
+
+        BookmarkEditor = new BookmarkEditorViewModel(_services.Bookmarks, existing, isNew);
+        IsBookmarkEditorOpen = true;
     }
+
+    /// <summary>The edit panel closed (Done, Remove, Esc or a click elsewhere): save what changed.</summary>
+    public async Task CloseBookmarkEditorAsync()
+    {
+        IsBookmarkEditorOpen = false;
+        if (BookmarkEditor is { } editor)
+        {
+            BookmarkEditor = null;
+            await editor.CommitAsync();
+        }
+    }
+
+    private void RefreshBookmarkState()
+    {
+        IsBookmarked = !IsInternal && _services.Bookmarks.FindByUrl(_browser.Url) is not null;
+        OnPropertyChanged(nameof(CanBookmark));
+    }
+
+    private void OnBookmarksChanged(object? sender, EventArgs e) => RefreshBookmarkState();
 
     // ---------------------------------------------------------------- find in page
 
-    public void OpenFind() => IsFindBarOpen = true;
+    public void OpenFind()
+    {
+        if (!IsInternal)
+        {
+            IsFindBarOpen = true;
+        }
+    }
 
     [RelayCommand]
     private void CloseFind()
@@ -357,6 +617,21 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
 
     private void OnBrowserStateChanged(object? sender, EventArgs e)
     {
+        // The engine's page title arrived after the visit was recorded: update the history entry.
+        if (_recordedUrl is not null && _browser.Url == _recordedUrl
+            && !string.IsNullOrWhiteSpace(_browser.Title) && _browser.Title != _recordedTitle)
+        {
+            _recordedTitle = _browser.Title;
+            _services.History.UpdateTitle(_recordedUrl, _browser.Title);
+        }
+
+        if (IsInternal)
+        {
+            // The web page behind an internal page may still be loading; only Back's target changes.
+            CanGoBack = !string.IsNullOrEmpty(_browser.Url);
+            return;
+        }
+
         Title = !string.IsNullOrWhiteSpace(_browser.Title)
             ? _browser.Title
             : _browser.Url is { Length: > 0 } url ? UrlDisplay.ForAddressBar(url) : NewTabTitle;
@@ -374,18 +649,24 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
         if (_browser.Url != _lastUrl)
         {
             _lastUrl = _browser.Url;
+            RefreshBookmarkState();
 
-            // Never overwrite what the user is typing.
+            // Never change the text while the box has focus: the user may be about to type (or typing) into it,
+            // and replacing the text would drop the selection (typing then lands in front of the URL).
+            // EndAddressEdit shows the new address when the box loses focus.
             if (!_isEditingAddress)
             {
                 _isAddressDirty = false;
                 SetAddress(UrlDisplay.ForAddressBar(_browser.Url));
             }
-            else if (!_isAddressDirty)
-            {
-                SetAddress(_browser.Url ?? string.Empty);
-            }
         }
+    }
+
+    private void OnBrowserPageLoaded(object? sender, string url)
+    {
+        _recordedUrl = url;
+        _recordedTitle = _browser.Title;
+        _services.History.RecordVisit(url, _browser.Title);
     }
 
     private void OnBrowserNavigationStarted(object? sender, EventArgs e)
@@ -399,7 +680,13 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void OnBrowserProblemOccurred(object? sender, PageProblem problem) => Problem = problem;
+    private void OnBrowserProblemOccurred(object? sender, PageProblem problem)
+    {
+        if (!IsInternal)
+        {
+            Problem = problem;
+        }
+    }
 
     private void OnBrowserPopupRequested(object? sender, PopupRequest request)
     {
@@ -444,11 +731,15 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable
     {
         _browser.StateChanged -= OnBrowserStateChanged;
         _browser.NavigationStarted -= OnBrowserNavigationStarted;
+        _browser.PageLoaded -= OnBrowserPageLoaded;
         _browser.ProblemOccurred -= OnBrowserProblemOccurred;
         _browser.PopupRequested -= OnBrowserPopupRequested;
         _browser.PopupBlocked -= OnBrowserPopupBlocked;
         _browser.OpenInNewTabRequested -= OnBrowserOpenInNewTabRequested;
         _browser.CloseRequested -= OnBrowserCloseRequested;
+        _services.Bookmarks.Changed -= OnBookmarksChanged;
+        Suggestions.Dispose();
+        InternalPageContent?.Dispose();
         _browser.Dispose();
     }
 }
