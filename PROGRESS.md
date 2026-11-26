@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1 and 2 🔶 built, awaiting your manual checks · **Next: Phase 2.5 (ad blocking)**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2 and 2.5 🔶 built, awaiting your manual checks · **Next: your checks, then Phase 3 (bookmarks, history, settings)**
 
 ---
 
@@ -42,10 +42,11 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **166 passing tests**.
-   - F5: the browser window opens with one tab and loads the Bing home page. The **⋯** menu (top right) has Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
+   - Test Explorer: expect **205 passing tests**.
+   - F5: the browser window opens with one tab and loads the Bing home page. The **⋯** menu (top right) has Block ads, Ad blocker settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
+   - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
-4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (logs, WebView2 profile, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
+4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (logs, WebView2 profile, unpacked ad blocker, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
 
 **CLI equivalents** (run in the repo root):
 ```powershell
@@ -60,12 +61,17 @@ dotnet run --project AJBrowser
 AJBrowser.slnx
 Directory.Build.props        shared: Nullable, ImplicitUsings, Product, Version 0.1.0
 README.md                    build/run + data folders
+THIRD-PARTY-NOTICES.md       uBO Lite (GPLv3, version, SHA-256, source link), WebView2, CommunityToolkit; copied to output
 IMPLEMENTATION_PLAN.md       full roadmap (phases 0–10), findings, decisions
 PROGRESS.md                  this file
 AJBrowser/                   WPF app (net10.0-windows)
   App.xaml(.cs)              OnStartup composition, WebView2 runtime check, command-line URLs as tabs, global exception handlers, --diagnostics args (DEBUG)
   AppServices.cs             hand-written composition root (no DI container); CreateTab()
-  Browser/BrowserEnvironment.cs  shared CoreWebView2Environment (lazy, recreatable), runtime check, profile "Default"
+  Browser/BrowserEnvironment.cs  shared CoreWebView2Environment (lazy, recreatable), runtime check, profile "Default",
+                             AreBrowserExtensionsEnabled = true
+  Browser/ExtensionManager.cs    ad blocker: unpack bundled uBO Lite zip → install/upgrade in profile once per start,
+                             on/off (state.json), settings page URL; every new WebView awaits PrepareAsync first
+  Extensions/uBOLite_2026.1124.1811.chromium.zip  official release, unmodified (GPLv3), copied to output
   Browser/BrowserTab.cs      wraps one WebView2: Configure() = ALL per-WebView setup, navigation, crash recovery,
                              popups, favicon, zoom, find, fullscreen, context menu
   Browser/PopupRequest.cs    hands a new tab's WebView to WebView2 as a popup (deferral + NewWindow)
@@ -80,13 +86,15 @@ AJBrowser/                   WPF app (net10.0-windows)
   Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle)
   Diagnostics/               Phase 0.5 spike, DEBUG ONLY (excluded from Release via csproj)
 AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
-  Infrastructure/AppPaths.cs %LOCALAPPDATA%\AJBrowser\{WebView2,Data,Filters,Logs,Temp,Tools}
+  Infrastructure/AppPaths.cs %LOCALAPPDATA%\AJBrowser\{WebView2,Data,Filters,Extensions,Logs,Temp,Tools}
+  AdBlocking/                ExtensionVersion, ExtensionPackage (read zip manifest, unpack, clean old),
+                             AdBlockerInstallPlanner (keep/install/replace), AdBlockerState (state.json)
   Logging/                   LogEntry, ILogSink, AppLogger (always redacts), FileLogSink (daily, 5 MB roll, keep 10)
   Security/Redactor.cs       strips URL query/fragment/user-info; redacts Cookie/Authorization/Bearer in text
   Navigation/                UrlOrSearchResolver, UrlDisplay, BrowserDefaults (Bing home/search until Phase 3),
                              ZoomLevels, FindStatus, CommandLineUrls
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs (166 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking (205 tests)
 ```
 
 **Packages:**
@@ -101,8 +109,9 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 0.5 Feasibility spike | ✅ Done | Automated suite, cookie test and uBO Lite extension test (V5 → F15: blocks YouTube ads) done. Ad-block engine decided. |
 | 1 Single-tab browser | 🔶 Built | Agent: build, 113 tests, launch + home page load. **You:** the manual checks in §6. |
 | 2 Tabs | 🔶 Built | Agent: build, 166 tests, launch with 2 startup tabs + script popup blocked. **You:** the manual checks in §6. |
-| 2.5 Ad blocking (uBO Lite) | ⏭ **Next** | New phase, decided 2026-11-26. See plan "Phase 2.5" |
-| 3–10 | Not started | Phase 8 is now the optional adblock-rust upgrade |
+| 2.5 Ad blocking (uBO Lite) | 🔶 Built | Agent: build, 205 tests, 3 launches (installs on first start, reused on the next, off/on choice kept). **You:** the checks in §6. |
+| 3 Bookmarks, history, settings | ⏭ **Next** | After your checks |
+| 4–10 | Not started | Phase 8 is the optional adblock-rust upgrade |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
 - Media responses expose content type, length and range, and manifest bodies are readable. But content types are unreliable, DASH segments look like `video/mp4`, and fMP4 HLS uses a byte-range `main.mp4`, so suppress anything a manifest references.
@@ -115,13 +124,13 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **uBlock Origin Lite runs in WebView2 and blocks YouTube video ads** (Optimal mode). It's stored as an unpacked extension that references its original folder, and its rules only update with new extension versions (F15).
 - CDNs put tokens in URL **paths**, so a `Redactor.MediaUrl` is needed (Phase 5).
 
-**Decided:** ad blocking = uBlock Origin Lite via WebView2's extension API in Phase 2.5 (right after tabs); adblock-rust + scriptlets (Brave's approach) is an optional Phase 8 upgrade (plan §12).
+**Decided:** ad blocking = uBlock Origin Lite via WebView2's extension API, built in Phase 2.5 and shipped as the official release zip in git (unpacked at first run); adblock-rust + scriptlets (Brave's approach) is an optional Phase 8 upgrade (plan §12).
 
 **Open decisions:**
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: check Phases 1 and 2, then Phase 2.5 (ad blocking)
+## 6. Next task: check Phases 1, 2 and 2.5, then Phase 3
 
 **Phase 1 checks** (not reported yet): address bar (`example.com`, `best wpf tutorials`, `c#`), click-to-select-all and Esc, Back/Forward, Reload/Stop, `http://nonexistent.invalid` → error panel with Try again, Wi-Fi off → error panel, ending a `msedgewebview2.exe` renderer in Task Manager → crash panel, theme switch.
 
@@ -139,16 +148,27 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 
 Known Phase 2 limits: middle-click / Ctrl+click on links open the tab in front (WebView2 doesn't say which button was used); beyond about 20 tabs (at 1280 px) the extra tabs are clipped (use Ctrl+Tab); tabs can't be dragged yet (Phase 9).
 
-Report anything odd, and the agent will fix it before Phase 2.5.
+**Phase 2.5 checks** (F5, Debug):
+1. **Installs itself:** the log (⋯ → Open data folder → `Logs`) has `Ad blocker ready: uBlock Origin Lite 2026.1124.1811, on`. To see a true first install, close the app and delete `%LOCALAPPDATA%\AJBrowser\Extensions\uBOLite\`, then start again: it reinstalls (log: `Installed uBlock Origin Lite …`).
+2. **YouTube:** play 3–4 videos: no pre-roll ads.
+3. **News site** (for example timesofindia.com or cnn.com): ad slots are visibly gone.
+4. **Toggle:** ⋯ → **Block ads** unticks and the page reloads → ads come back; tick it again → gone.
+5. **Restart keeps the choice:** turn it off, close, F5 → ⋯ shows Block ads unticked, ads visible. Turn it back on.
+6. **Settings:** ⋯ → **Ad blocker settings** opens uBO Lite's dashboard in a new tab (filtering mode "Optimal").
+7. Hover the menu items: the tooltip shows the uBO Lite version.
 
-**Phase 2.5 in short** (plan "Phase 2.5"): enable extensions in the normal browser, bundle uBlock Origin Lite, install it automatically, add an ad-blocking on/off switch.
+Known Phase 2.5 limits: a future uBO Lite upgrade resets its own dashboard settings (new folder → new extension id); our on/off choice is kept. Other open tabs only change after they reload.
+
+Report anything odd, and the agent will fix it before Phase 3.
+
+**Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt on the new PC:**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 2.5.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 3.
 
 ## 7. uBlock Origin Lite test (V5): done
 
-Result in plan §11 F15. On the first PC the extension is registered in the Diagnostics profile from `D:\tools\uBOLite`; keep that folder, or click **Load unpacked…** again after moving it. On a new PC, load it again (download the `.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases).
+Result in plan §11 F15. On the first PC the extension is registered in the **Diagnostics** profile from `D:\tools\uBOLite`; keep that folder, or click **Load unpacked…** again after moving it. The normal browser doesn't need that folder: since Phase 2.5 it installs its own copy from the bundled zip.
 
 ## 8. Diagnostics tool quick reference (Debug builds)
 

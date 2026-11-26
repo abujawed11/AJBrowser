@@ -21,6 +21,10 @@ public sealed class AppServices : IDisposable
         Theme = theme;
         Shell = shell;
         Browser = new BrowserEnvironment(paths.WebView2UserData, CreateLogger(nameof(BrowserEnvironment)));
+        Extensions = new ExtensionManager(
+            System.IO.Path.Combine(AppContext.BaseDirectory, "Extensions"),
+            paths.Extensions,
+            CreateLogger(nameof(ExtensionManager)));
         AddressResolver = new UrlOrSearchResolver(BrowserDefaults.SearchUrlTemplate);
     }
 
@@ -31,6 +35,9 @@ public sealed class AppServices : IDisposable
 
     /// <summary>The shared WebView2 environment (created lazily when the first tab starts).</summary>
     public BrowserEnvironment Browser { get; }
+
+    /// <summary>The bundled ad blocker (uBlock Origin Lite), installed when the first tab starts.</summary>
+    public ExtensionManager Extensions { get; }
 
     public UrlOrSearchResolver AddressResolver { get; }
 
@@ -56,7 +63,7 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Creates a tab (WebView wrapper + its view model). Not started yet: call <see cref="TabViewModel.StartAsync"/>.</summary>
     public TabViewModel CreateTab() =>
-        new(new BrowserTab(Browser, Theme, CreateLogger(nameof(BrowserTab))),
+        new(new BrowserTab(Browser, Extensions, Theme, CreateLogger(nameof(BrowserTab))),
             AddressResolver,
             BrowserDefaults.HomePage,
             CreateLogger(nameof(TabViewModel)));

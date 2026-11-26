@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1 and 2 implemented, awaiting your manual checks · next: Phase 2.5 (ad blocking with uBO Lite)
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2 and 2.5 (ad blocking with uBO Lite) implemented, awaiting your manual checks · next: Phase 3
 
 ---
 
@@ -489,16 +489,19 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 **Depends on:** Phase 2 (popups and all WebViews go through the shared `BrowserTab` setup). Decided 2026-11-26 (§12).
 
 **Checklist**
-- [ ] `BrowserEnvironment`: set `AreBrowserExtensionsEnabled = true` in the environment options (applies to every WebView in the user data folder).
-- [ ] Bundle the unpacked uBO Lite build in the app output (for example `Extensions/uBOLite/`), pinned to a version, with its `LICENSE` (GPLv3) and a source link. Add it to a third-party notices file.
-- [ ] Copy it from the install folder to `%LOCALAPPDATA%\AJBrowser\Extensions\uBOLite\<version>\` before installing, because WebView2 references the folder in place (F15) and the install folder may change on app updates.
-- [ ] `ExtensionManager` (Browser layer): on startup, `GetBrowserExtensionsAsync`; install with `AddBrowserExtensionAsync` if missing; when the bundled version is newer, remove the old one and install the new one. Log the outcome.
-- [ ] On/off: a toolbar shield or ⋯ menu item calling `extension.EnableAsync(bool)`; the state persists (in the profile now, in settings once Phase 3 exists).
-- [ ] Optional: a ⋯ menu item "Ad blocker settings" that opens `chrome-extension://<id>/dashboard.html` in the page area (filtering mode, per-site exceptions).
-- [ ] Failure handling: if extensions can't load (old runtime, policy), browsing continues without blocking and the log says why; tracking prevention stays on.
+- [x] `BrowserEnvironment`: set `AreBrowserExtensionsEnabled = true` in the environment options (applies to every WebView in the user data folder).
+- [x] Bundle uBO Lite in the app output, pinned to a version, with its `LICENSE` (GPLv3) and a source link, and list it in `THIRD-PARTY-NOTICES.md`. *As built:* we ship the **official release zip, unmodified** (`AJBrowser/Extensions/uBOLite_2026.1124.1811.chromium.zip`, 9 MB, SHA-256 in the notices file) instead of ~1,000 unpacked files. Its `LICENSE.txt` and build `README.md` are inside the zip.
+- [x] Unpack it from the install folder to `%LOCALAPPDATA%\AJBrowser\Extensions\uBOLite\<version>\` before installing, because WebView2 references the folder in place (F15) and the install folder may change on app updates. Extraction goes to `<version>.partial` and is renamed at the end, so an interrupted unpack is never used.
+- [x] `ExtensionManager` (Browser layer): on startup, `GetBrowserExtensionsAsync`; install with `AddBrowserExtensionAsync` if missing; when the bundled version is newer (or the version is unknown, or its folder is gone), remove the old one and install the new one; delete old version folders. Log the outcome. WebView2 doesn't report extension versions, so `Extensions\uBOLite\state.json` records id, version, folder and the on/off choice. Every new WebView calls `PrepareAsync` before its first navigation; only the first WebViews wait (at most 20 s), so the first page is already ad-free.
+- [x] On/off: ⋯ menu → **Block ads** (ticked when on) calling `extension.EnableAsync(bool)`, then reloading the current page. The choice is saved in `state.json` and applied again at every start (moves to settings in Phase 3).
+- [x] ⋯ menu → **Ad blocker settings** opens `chrome-extension://<id>/dashboard.html` in a new tab (filtering mode, per-site exceptions).
+- [x] Failure handling: if extensions can't load (old runtime, policy, missing zip), browsing continues without blocking, the log says why, both menu items are greyed out with a tooltip; tracking prevention stays on.
 
-**Files:** `Browser/BrowserEnvironment.cs`, `Browser/ExtensionManager.cs`, `AJBrowser.csproj` (content items), `Extensions/uBOLite/*`, `THIRD-PARTY-NOTICES.md`, toolbar/menu XAML.
-**Packages:** none (the extension is a bundled folder, GPLv3, shipped unmodified alongside the app).
+**Implementation notes (2026-11-26):** the agent built the solution (0 warnings, 0 errors) and ran 205 passing tests (39 new: extension versions, install decision, zip reading/unpacking/cleanup, state file). It launched the Debug exe three times against the real profile: first start **installed** uBO Lite in about 4 s (`Installed uBlock Origin Lite 2026.1124.1811 (id jhflpejankfpjpflehfmfgckodndmdjc)`); the second start **reused** it (ready 0.6 s after the environment); with `Enabled: false` in `state.json` the next start reported `off`, and switching it back reported `on`. **Not yet checked by a person:** whether ads are actually blocked in the normal browser (YouTube, news sites), the menu toggle, the settings page in a tab.
+**Known limits:** a new uBO Lite version installs from a new folder, so it gets a **new extension id** and the user's uBO Lite dashboard settings (filtering mode, per-site exceptions) reset on upgrade; our own on/off choice is kept. Pages already open keep their current state until reloaded (only the current tab reloads on toggle).
+
+**Files:** `Browser/BrowserEnvironment.cs`, `Browser/ExtensionManager.cs`, `Browser/BrowserTab.cs`, `AppServices.cs`, `ViewModels/MainWindowViewModel.cs`, `Views/MainWindow.xaml`, `AJBrowser.csproj` (content items), `Extensions/uBOLite_*.chromium.zip`, `THIRD-PARTY-NOTICES.md`; Core `AdBlocking/` (`ExtensionVersion`, `ExtensionPackage`, `AdBlockerInstallPlanner`, `AdBlockerState`), `AppPaths.Extensions`.
+**Packages:** none (the extension is the bundled release zip, GPLv3, shipped unmodified alongside the app; unzipping uses the in-box `System.IO.Compression`).
 **Risks:** rules only update with new uBO Lite versions (F15), so plan to bump the bundled version in releases; YouTube may break blocking until uBO Lite updates; WebView2 extension support is newer than the rest of the API surface.
 **Manual verification:** fresh profile → F5 → the extension installs itself (log line). YouTube: no pre-roll ads on 3–4 videos. Turn blocking off → ads return; on → gone; restart → the choice is kept. A news site visibly loses ad slots.
 **Automated tests:** version comparison / "needs reinstall" decision as a pure function in Core.
@@ -825,6 +828,8 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | 2026-11-26 | Own find bar (docked above the page) instead of WebView2's find dialog | Works when focus is in our UI, matches the app theme, and avoids depending on WebView2's dialog behaviour |
 | 2026-11-26 | Keep WebView2's built-in link-hover status bubble and permission prompts | They already do what the plan asked; a custom `Popup` would add airspace/positioning bugs for no gain |
 | 2026-11-26 | WebView `DefaultBackgroundColor` is always white | Chrome's behaviour: pages without their own background assume white; a dark default made them unreadable in dark mode (found in Phase 2 testing) |
+| 2026-11-26 | Phase 2.5: ship uBO Lite as its **official release zip** (committed to git, 9 MB) and unpack it at first run, rather than committing the unpacked folder or downloading it at build time | One unmodified upstream file is the clearest GPL "unmodified aggregation" story and keeps git to one binary instead of ~1,000 files; no network needed to build. Upgrade = drop in a newer zip and delete the old one |
+| 2026-11-26 | Phase 2.5: ad-block on/off and the installed version live in `Extensions\uBOLite\state.json` until Phase 3 settings | WebView2 doesn't report extension versions; an explicit file makes "restart keeps the choice" independent of how WebView2 persists the enabled flag |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---

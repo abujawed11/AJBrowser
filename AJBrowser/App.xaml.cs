@@ -39,6 +39,7 @@ public partial class App : Application
                 _services.Paths,
                 _services.Theme,
                 _services.Shell,
+                _services.Extensions,
                 _services.CreateTab,
                 _services.CreateLogger(nameof(MainWindowViewModel)));
 

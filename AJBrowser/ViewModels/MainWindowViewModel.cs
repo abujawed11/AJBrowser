@@ -17,14 +17,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly ThemeService _theme;
     private readonly ShellService _shell;
+    private readonly ExtensionManager _adBlocker;
     private readonly Func<TabViewModel> _createTab;
     private readonly AppLogger _log;
     private readonly ClosedTabStack _closedTabs = new();
 
-    public MainWindowViewModel(AppPaths paths, ThemeService theme, ShellService shell, Func<TabViewModel> createTab, AppLogger log)
+    public MainWindowViewModel(AppPaths paths, ThemeService theme, ShellService shell, ExtensionManager adBlocker, Func<TabViewModel> createTab, AppLogger log)
     {
         _theme = theme;
         _shell = shell;
+        _adBlocker = adBlocker;
+        _adBlocker.StateChanged += OnAdBlockerStateChanged;
         _createTab = createTab;
         _log = log;
         DataFolder = paths.Root;
@@ -56,6 +59,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool IsSystemTheme => _theme.Theme == AppTheme.System;
     public bool IsLightTheme => _theme.Theme == AppTheme.Light;
     public bool IsDarkTheme => _theme.Theme == AppTheme.Dark;
+
+    /// <summary>The ad blocker is installed and can be switched (its menu items are greyed out otherwise).</summary>
+    public bool IsAdBlockAvailable => _adBlocker.IsAvailable;
+
+    /// <summary>Ticks the "Block ads" menu item.</summary>
+    public bool IsAdBlockEnabled => _adBlocker.IsAvailable && _adBlocker.IsEnabled;
+
+    /// <summary>Tooltip for the ad-block menu items.</summary>
+    public string AdBlockStatus => _adBlocker.IsAvailable
+        ? $"uBlock Origin Lite {_adBlocker.Version}"
+        : "The ad blocker isn't available (still starting, or it failed: see the log in the data folder)";
 
     public bool IsDebugBuild =>
 #if DEBUG
@@ -278,6 +292,36 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsDarkTheme));
     }
 
+    /// <summary>⋯ menu → Block ads. The current page reloads so the change shows at once.</summary>
+    [RelayCommand(CanExecute = nameof(IsAdBlockAvailable))]
+    private async Task ToggleAdBlock()
+    {
+        await _adBlocker.SetEnabledAsync(!_adBlocker.IsEnabled);
+        if (SelectedTab is { } tab)
+        {
+            await tab.ReloadCommand.ExecuteAsync(null);
+        }
+    }
+
+    /// <summary>⋯ menu → Ad blocker settings: uBlock Origin Lite's own dashboard, in a new tab.</summary>
+    [RelayCommand(CanExecute = nameof(IsAdBlockAvailable))]
+    private void OpenAdBlockSettings()
+    {
+        if (_adBlocker.SettingsPageUrl is { } url)
+        {
+            OpenTab(url, select: true, opener: SelectedTab);
+        }
+    }
+
+    private void OnAdBlockerStateChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(IsAdBlockAvailable));
+        OnPropertyChanged(nameof(IsAdBlockEnabled));
+        OnPropertyChanged(nameof(AdBlockStatus));
+        ToggleAdBlockCommand.NotifyCanExecuteChanged();
+        OpenAdBlockSettingsCommand.NotifyCanExecuteChanged();
+    }
+
     [RelayCommand]
     private void OpenDataFolder() => _shell.OpenFolder(DataFolder);
 
@@ -289,6 +333,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _adBlocker.StateChanged -= OnAdBlockerStateChanged;
         foreach (var tab in Tabs)
         {
             tab.Dispose();

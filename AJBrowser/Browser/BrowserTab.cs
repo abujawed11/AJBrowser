@@ -30,6 +30,7 @@ public sealed class BrowserTab : IDisposable
     private const string OpenLinkInNewWindowItemName = "openLinkInNewWindow";
 
     private readonly BrowserEnvironment _environment;
+    private readonly ExtensionManager _extensions;
     private readonly ThemeService _theme;
     private readonly AppLogger _log;
     private readonly Grid _host = new();
@@ -44,9 +45,10 @@ public sealed class BrowserTab : IDisposable
     private int _faviconVersion;
     private bool _disposed;
 
-    public BrowserTab(BrowserEnvironment environment, ThemeService theme, AppLogger log)
+    public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, ThemeService theme, AppLogger log)
     {
         _environment = environment;
+        _extensions = extensions;
         _theme = theme;
         _log = log;
         _theme.ThemeChanged += OnThemeChanged;
@@ -270,6 +272,14 @@ public sealed class BrowserTab : IDisposable
         _attachedEnvironment = environment;
         _core = webView.CoreWebView2;
         Configure(webView, _core);
+
+        // The ad blocker must be installed before the first page loads, or that page still shows ads.
+        // Only the first WebViews actually wait (a few seconds on the very first run); never throws.
+        await _extensions.PrepareAsync(_core);
+        if (_disposed || !ReferenceEquals(_webView, webView))
+        {
+            return;
+        }
 
         if (_pendingNavigation is { } target)
         {

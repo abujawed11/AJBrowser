@@ -18,6 +18,7 @@ public sealed class AppPaths
         DatabaseFile = Path.Combine(Data, "ajbrowser.db");
         SettingsFile = Path.Combine(Data, "settings.json");
         Filters = Path.Combine(Root, "Filters");
+        Extensions = Path.Combine(Root, "Extensions");
         Logs = Path.Combine(Root, "Logs");
         Temp = Path.Combine(Root, "Temp");
         Tools = Path.Combine(Root, "Tools");
@@ -41,6 +42,12 @@ public sealed class AppPaths
     /// <summary>Downloaded ad-block filter lists and their compiled cache.</summary>
     public string Filters { get; }
 
+    /// <summary>
+    /// Unpacked browser extensions (uBlock Origin Lite). WebView2 loads them from this folder in place,
+    /// so it must stay put while they are installed (spike F15).
+    /// </summary>
+    public string Extensions { get; }
+
     /// <summary>Redacted application logs.</summary>
     public string Logs { get; }
 
@@ -50,7 +57,7 @@ public sealed class AppPaths
     /// <summary>External tools fetched on demand (for example FFmpeg).</summary>
     public string Tools { get; }
 
-    public IReadOnlyList<string> AllDirectories => [Root, WebView2UserData, Data, Filters, Logs, Temp, Tools];
+    public IReadOnlyList<string> AllDirectories => [Root, WebView2UserData, Data, Filters, Extensions, Logs, Temp, Tools];
 
     /// <summary>Creates any missing directories. Safe to call repeatedly.</summary>
     public void EnsureCreated()

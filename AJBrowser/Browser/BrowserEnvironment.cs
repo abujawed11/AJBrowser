@@ -76,8 +76,13 @@ public sealed class BrowserEnvironment
     {
         try
         {
-            // No custom options yet. If options are ever added, every WebView in this folder must use them.
-            var environment = await CoreWebView2Environment.CreateAsync(browserExecutableFolder: null, userDataFolder: _userDataFolder);
+            // These options apply to every WebView in this user data folder; all of them must be created from here.
+            var options = new CoreWebView2EnvironmentOptions
+            {
+                // Needed for the bundled ad blocker (uBlock Origin Lite, Phase 2.5). See ExtensionManager.
+                AreBrowserExtensionsEnabled = true,
+            };
+            var environment = await CoreWebView2Environment.CreateAsync(browserExecutableFolder: null, userDataFolder: _userDataFolder, options);
             _log.Info($"WebView2 environment created. Runtime {environment.BrowserVersionString}");
             return environment;
         }

@@ -15,6 +15,12 @@
     <ProjectReference Include="..\AJBrowser.Core\AJBrowser.Core.csproj" />
   </ItemGroup>
 
+  <!-- Phase 2.5: the bundled ad blocker (official uBlock Origin Lite release zip, GPLv3, unmodified) and the notices file. -->
+  <ItemGroup>
+    <None Update="Extensions\*.zip" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Phase 0.5 feasibility spike: the Diagnostics window exists only in Debug builds. -->
   <ItemGroup Condition="'$(Configuration)' != 'Debug'">
     <Compile Remove="Diagnostics\**" />

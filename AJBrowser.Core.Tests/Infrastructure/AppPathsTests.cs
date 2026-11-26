@@ -23,6 +23,7 @@ public sealed class AppPathsTests : IDisposable
         Assert.Equal(Path.Combine(_root, "Data", "ajbrowser.db"), paths.DatabaseFile);
         Assert.Equal(Path.Combine(_root, "Data", "settings.json"), paths.SettingsFile);
         Assert.Equal(Path.Combine(_root, "Filters"), paths.Filters);
+        Assert.Equal(Path.Combine(_root, "Extensions"), paths.Extensions);
         Assert.Equal(Path.Combine(_root, "Logs"), paths.Logs);
         Assert.Equal(Path.Combine(_root, "Temp"), paths.Temp);
         Assert.Equal(Path.Combine(_root, "Tools"), paths.Tools);

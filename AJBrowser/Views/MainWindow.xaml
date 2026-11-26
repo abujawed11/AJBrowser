@@ -104,6 +104,13 @@
                                     <MenuItem Header="Dark" IsChecked="{Binding IsDarkTheme, Mode=OneWay}"
                                               Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.Dark}" />
                                 </MenuItem>
+                                <!-- Ad blocking (uBlock Origin Lite, Phase 2.5). Greyed out while unavailable; the tooltip says why. -->
+                                <MenuItem Header="Block ads" IsChecked="{Binding IsAdBlockEnabled, Mode=OneWay}"
+                                          Command="{Binding ToggleAdBlockCommand}"
+                                          ToolTip="{Binding AdBlockStatus}" ToolTipService.ShowOnDisabled="True" />
+                                <MenuItem Header="Ad blocker settings" Command="{Binding OpenAdBlockSettingsCommand}"
+                                          ToolTip="{Binding AdBlockStatus}" ToolTipService.ShowOnDisabled="True" />
+                                <Separator />
                                 <MenuItem Header="Open data folder" Command="{Binding OpenDataFolderCommand}" />
                                 <Separator Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}" />
                                 <MenuItem Header="Diagnostics (debug)" Click="OpenDiagnostics_Click"
