@@ -660,9 +660,11 @@ public sealed class BrowserTab : IDisposable
     /// </summary>
     private void AddDownloadVideoItem(CoreWebView2ContextMenuTarget target, IList<CoreWebView2ContextMenuItem> items)
     {
+        // Not HasSourceUri: WebView2 (runtime 158) reports it as false for <video> even though SourceUri holds the address
+        // (found while testing 5c, plan §11 F20), so the address itself decides.
         if (_attachedEnvironment is null
             || target.Kind is not (CoreWebView2ContextMenuTargetKind.Video or CoreWebView2ContextMenuTargetKind.Audio)
-            || !target.HasSourceUri
+            || string.IsNullOrEmpty(target.SourceUri)
             || !Uri.TryCreate(target.SourceUri, UriKind.Absolute, out var source)
             || (source.Scheme != Uri.UriSchemeHttps && source.Scheme != Uri.UriSchemeHttp))
         {

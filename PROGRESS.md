@@ -173,7 +173,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 ## 6. Next task: check Phase 5 (5b + 5c), then start Phase 6
 
 **Phase 5c quick try:**
-4. Right-click a playing video on a page with a plain video file → "Download video with AJBrowser" → it appears in the downloads.
+4. Right-click a playing video on a page with a plain video file → "Download video with AJBrowser" (first item) → it appears in the downloads. *Fixed after your report (WebView2 quirk F20) and checked by the agent in the real app. It doesn't appear on streaming players (`blob:` sources) or where the site covers the video with its own player layer.*
 5. In the Videos picker, the small save icon next to Download → a Save dialog; Cancel → nothing happens.
 6. Settings → Downloads → turn off "Detect videos on pages" → the film button disappears; turn it on and reload → it comes back.
 7. Expired link: hard to provoke on purpose; if a video download fails with "The link has expired…", play the video again in its tab and press Retry → it continues.
