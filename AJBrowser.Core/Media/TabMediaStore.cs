@@ -20,6 +20,9 @@ public sealed record DetectedMedia
 
     public bool IsAudioOnly { get; init; }
 
+    /// <summary>The file's real name, when the server sent one (<c>Content-Disposition</c>). Not sanitized.</summary>
+    public string? ServerFileName { get; init; }
+
     /// <summary>The whole file's size, when the server told us.</summary>
     public long? TotalBytes { get; init; }
 
@@ -190,6 +193,7 @@ public sealed class TabMediaStore
             {
                 Url = observation.Url,
                 TotalBytes = Max(existing.TotalBytes, total),
+                ServerFileName = Downloads.FileNamer.FromContentDisposition(observation.ContentDisposition) ?? existing.ServerFileName,
                 ResourceContext = observation.ResourceContext ?? existing.ResourceContext,
                 Request = request ?? existing.Request,
                 RequestCount = existing.RequestCount + 1,
@@ -214,6 +218,7 @@ public sealed class TabMediaStore
             Container = classification.Container,
             IsAudioOnly = classification.IsAudioOnly,
             TotalBytes = total,
+            ServerFileName = Downloads.FileNamer.FromContentDisposition(observation.ContentDisposition),
             ResourceContext = observation.ResourceContext,
             Request = request,
             IsNewSinceSpaNavigation = _afterSpaNavigation,
@@ -262,7 +267,7 @@ public sealed class TabMediaStore
     private bool Bump(DetectedMedia before, DetectedMedia after, int visibleBefore)
     {
         var changed = VisibleCount != visibleBefore
-                      || (IsVisible(after) && (before.TotalBytes != after.TotalBytes || before.Width != after.Width
+                      || (IsVisible(after) && (before.TotalBytes != after.TotalBytes || before.ServerFileName != after.ServerFileName || before.Width != after.Width
                                                || before.Height != after.Height || before.DurationSeconds != after.DurationSeconds));
         if (changed)
         {

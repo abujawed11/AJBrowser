@@ -89,12 +89,7 @@ public sealed class FileNamer
     /// </summary>
     public static string Suggest(Uri url, string? contentDisposition = null, string? contentType = null)
     {
-        string? name = null;
-        if (!string.IsNullOrWhiteSpace(contentDisposition) && ContentDispositionHeaderValue.TryParse(contentDisposition, out var disposition))
-        {
-            // FileNameStar is the RFC 5987 form (filename*=UTF-8''…), which carries non-ASCII names correctly.
-            name = disposition.FileNameStar ?? disposition.FileName?.Trim('"');
-        }
+        var name = FromContentDisposition(contentDisposition);
 
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -110,6 +105,22 @@ public sealed class FileNamer
         }
 
         return sanitized;
+    }
+
+    /// <summary>
+    /// The file name a server gave in <c>Content-Disposition</c> (<c>attachment</c> or <c>inline</c>), or null.
+    /// Not sanitized: pass it through <see cref="Sanitize"/> before using it as a path.
+    /// </summary>
+    public static string? FromContentDisposition(string? contentDisposition)
+    {
+        if (string.IsNullOrWhiteSpace(contentDisposition) || !ContentDispositionHeaderValue.TryParse(contentDisposition, out var disposition))
+        {
+            return null;
+        }
+
+        // FileNameStar is the RFC 5987 form (filename*=UTF-8''…), which carries non-ASCII names correctly.
+        var name = disposition.FileNameStar ?? disposition.FileName?.Trim('"');
+        return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
     }
 
     /// <summary>

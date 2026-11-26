@@ -191,6 +191,15 @@ public sealed class TabMediaStoreTests
     }
 
     [Fact]
+    public void Keeps_the_file_name_the_server_sends()
+    {
+        var store = new TabMediaStore();
+        store.Add(Obs.Of(Mp4, "video/mp4", 206, 1000, "bytes 0-999/5000000"));
+        store.Add(Obs.Of(Mp4, "video/mp4", 206, 1000, "bytes 1000-1999/5000000") with { ContentDisposition = "inline; filename*=UTF-8''Caf%C3%A9%20tour.mp4" });
+        Assert.Equal("Café tour.mp4", Assert.Single(store.Visible).ServerFileName);
+    }
+
+    [Fact]
     public void Display_url_hides_tokens()
     {
         var store = new TabMediaStore();
@@ -332,6 +341,43 @@ public sealed class MediaFileNamerTests
     [InlineData("https://cdn.example/", null, null, false, null, "video.mp4")]
     public void Suggests_names(string url, string? title, int? height, bool audio, string? container, string expected) =>
         Assert.Equal(expected, MediaFileNamer.Suggest(Media(url, container, height, audio), title));
+
+    [Fact]
+    public void The_servers_file_name_wins()
+    {
+        var media = Media("https://cdn.example/f/8c1d2e3f4a5b6c7d8e9f.mkv", "MKV", 1080) with
+        {
+            ServerFileName = "Pritam and Pedro S01E03 The Blackmail.1080p.WEB-DL.Multi.DD+5.1.x264-KIN.mkv",
+        };
+        Assert.Equal("Pritam and Pedro S01E03 The Blackmail.1080p.WEB-DL.Multi.DD+5.1.x264-KIN.mkv",
+            MediaFileNamer.Suggest(media, "MyPeerCloud - Personal Cloud"));
+    }
+
+    [Fact]
+    public void A_real_name_in_the_address_beats_the_page_title() =>
+        Assert.Equal("Pritam and Pedro S01E03.mkv",
+            MediaFileNamer.Suggest(Media("https://cdn.example/files/Pritam%20and%20Pedro%20S01E03.mkv", "MKV", 1080), "MyPeerCloud - Personal Cloud"));
+
+    [Theory]
+    [InlineData("https://cdn.example/v/d17_CixjLkPq2bX9mNa3.mp4")]
+    [InlineData("https://cdn.example/v/3f2a9c4e-1b7d-4e8a-9c3f-0a1b2c3d4e5f.mp4")]
+    [InlineData("https://cdn.example/v/videoplayback.mp4")]
+    [InlineData("https://cdn.example/v/master.mp4")]
+    public void Tokens_and_generic_names_in_the_address_fall_back_to_the_title(string url) =>
+        Assert.Equal("Holiday 720p.mp4", MediaFileNamer.Suggest(Media(url, "MP4", 720), "Holiday"));
+
+    [Fact]
+    public void A_server_name_without_extension_gets_one() =>
+        Assert.Equal("Lecture 4.mp4", MediaFileNamer.Suggest(Media("https://cdn.example/x") with { ServerFileName = "Lecture 4" }, null));
+
+    [Theory]
+    [InlineData("Pritam and Pedro S01E03", true)]
+    [InlineData("my-holiday-trip", true)]
+    [InlineData("d17_CixjLkPq2bX9mNa3", false)]
+    [InlineData("video", false)]
+    [InlineData("song", false)]
+    [InlineData("12345", false)]
+    public void Judges_names(string stem, bool expected) => Assert.Equal(expected, MediaFileNamer.IsMeaningful(stem, lenient: false));
 
     [Fact]
     public void Long_titles_are_cut() =>

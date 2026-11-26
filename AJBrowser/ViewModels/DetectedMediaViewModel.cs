@@ -13,10 +13,13 @@ namespace AJBrowser.ViewModels;
 public sealed partial class DetectedMediaViewModel : ObservableObject
 {
     private readonly Func<DetectedMediaViewModel, Task> _download;
+    private readonly Func<DetectedMedia, string> _name;
 
-    public DetectedMediaViewModel(DetectedMedia media, Func<DetectedMediaViewModel, Task> download)
+    /// <param name="name">The file name it would be saved as (MediaFileNamer with the page title).</param>
+    public DetectedMediaViewModel(DetectedMedia media, Func<DetectedMediaViewModel, Task> download, Func<DetectedMedia, string> name)
     {
         _download = download;
+        _name = name;
         Media = media;
     }
 
@@ -28,17 +31,20 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
 
     public bool CanDownload => Media.Kind == MediaKind.Direct && !IsStarting;
 
-    /// <summary>"1280×720 · MP4", "Audio · M4A", "Unknown quality · WebM", "Stream · HLS".</summary>
-    public string Title
+    /// <summary>The file's name: the server's, the one in the address, or the page title (see MediaFileNamer).</summary>
+    public string Title => IsStream ? $"Stream ({Media.Container})" : _name(Media);
+
+    /// <summary>"1280×720 · MP4", "Audio · M4A", "Unknown quality · WebM".</summary>
+    public string Quality
     {
         get
         {
-            var quality = IsStream ? "Stream" : Media.Resolution ?? (Media.IsAudioOnly ? "Audio" : "Unknown quality");
+            var quality = Media.Resolution ?? (Media.IsAudioOnly ? "Audio" : "Unknown quality");
             return Media.Container is { } container ? $"{quality} · {container}" : quality;
         }
     }
 
-    /// <summary>"12.3 MB · 1:05 · cdn.example.com", or for streams that downloading them comes in a later version.</summary>
+    /// <summary>"1920×1080 · MKV · 951 MB · 36:04 · cdn.example.com", or for streams that they come in a later version.</summary>
     public string Details
     {
         get
@@ -48,7 +54,7 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
                 return $"Stream downloads arrive in a later version · {Media.Host}";
             }
 
-            var parts = new List<string> { Media.TotalBytes is { } bytes ? DownloadText.Size(bytes) : "Unknown size" };
+            var parts = new List<string> { Quality, Media.TotalBytes is { } bytes ? DownloadText.Size(bytes) : "Unknown size" };
             if (Media.DurationSeconds is { } seconds)
             {
                 parts.Add(FormatDuration(seconds));
@@ -59,7 +65,7 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
         }
     }
 
-    public string ToolTip => Media.DisplayUrl;
+    public string ToolTip => IsStream ? Media.DisplayUrl : $"{Title}\n{Media.DisplayUrl}";
 
     /// <summary>The download is being queued (cookies are being fetched): the button waits.</summary>
     [ObservableProperty]

@@ -775,7 +775,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
             }
             else
             {
-                Media.Add(new DetectedMediaViewModel(item, DownloadMediaAsync));
+                Media.Add(new DetectedMediaViewModel(item, DownloadMediaAsync, media => Core.Media.MediaFileNamer.Suggest(media, Title)));
             }
         }
 

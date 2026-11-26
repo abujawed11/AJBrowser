@@ -47,6 +47,7 @@
                                 </TextBlock>
 
                                 <StackPanel VerticalAlignment="Center">
+                                    <!-- The file name (it's saved under this name); quality and format are in the line below. -->
                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{Binding Details}" FontSize="{StaticResource CaptionFontSize}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />

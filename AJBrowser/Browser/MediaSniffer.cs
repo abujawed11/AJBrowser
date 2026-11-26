@@ -174,7 +174,7 @@ public sealed class MediaSniffer : IDisposable
             }
 
             long? length = long.TryParse(Header(headers, "Content-Length"), out var parsed) ? parsed : null;
-            var observation = new MediaObservation(url, status, contentType, length, Header(headers, "Content-Range"), context);
+            var observation = new MediaObservation(url, status, contentType, length, Header(headers, "Content-Range"), context, Header(headers, "Content-Disposition"));
             var pageUrl = Uri.TryCreate((sender as CoreWebView2)?.Source, UriKind.Absolute, out var page) ? page : null;
             var requestContext = RequestContext.FromObservedRequest(request.Headers, pageUrl);
 

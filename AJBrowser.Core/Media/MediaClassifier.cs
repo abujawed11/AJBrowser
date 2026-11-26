@@ -33,7 +33,8 @@ public sealed record MediaObservation(
     string? ContentType,
     long? ContentLength,
     string? ContentRange,
-    string? ResourceContext);
+    string? ResourceContext,
+    string? ContentDisposition = null);
 
 /// <summary>The classifier's verdict. <see cref="Container"/> is a short format name ("MP4", "WebM"…), when known.</summary>
 public sealed record MediaClassification(MediaKind Kind, string? Container = null, bool IsAudioOnly = false)
