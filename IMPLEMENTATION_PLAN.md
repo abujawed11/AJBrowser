@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2, 2.5 (ad blocking) and 3 (bookmarks, history, settings, session) implemented, awaiting your manual checks · Phase 4 (download manager) **built** (4a–4c; key checks run by the agent in the real app) · Phase 5 (direct video detection) **built**: 5a, 5b checked in the real app; 5c built, its real-app check pending
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2, 2.5 (ad blocking) and 3 (bookmarks, history, settings, session) implemented, awaiting your manual checks · Phase 4 (download manager) **built** (4a–4c; key checks run by the agent in the real app) · Phase 5 (direct video detection) **built** (5a–5c; right-click fix F20 checked in the real app) · Phase 6 (HLS) in progress: checkpoint **6a done** (core HLS logic), next **6b**
 
 ---
 
@@ -620,16 +620,20 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 
 **Depends on:** Phase 5.
 
+**Checkpoints:** **6a** Core only (playlist parsing, DRM/live classification, codec names, container choice, labels and size estimates, AES-128 decryption); **6b** download engine (segment downloader with parallel fetch, retries, resume, decryption; assembling the file; FFmpeg decision and integration); **6c** picker UI with the real qualities, DRM/live labels, error messages, check in the real app.
+
 **Checklist**
-- [ ] `HlsParser` (Core): master playlists (`EXT-X-STREAM-INF`, `EXT-X-MEDIA` audio/subtitle groups, `EXT-X-I-FRAME-STREAM-INF` ignored), media playlists (`EXTINF`, `EXT-X-BYTERANGE`, `EXT-X-MAP`, `EXT-X-KEY`, `EXT-X-DISCONTINUITY`, `EXT-X-ENDLIST`, `EXT-X-MEDIA-SEQUENCE`). Relative URI resolution.
-- [ ] Classification: `METHOD=AES-128` → supported (clear key fetched over HTTPS from the site, standard HLS, not DRM). `SAMPLE-AES`, `SAMPLE-AES-CTR`, or `KEYFORMAT` = FairPlay/Widevine → **"Protected (DRM) — not supported"**. No `EXT-X-ENDLIST` → "Live — not supported yet".
+- [x] *(6a)* `HlsParser` (Core): master playlists (`EXT-X-STREAM-INF`, `EXT-X-MEDIA` audio/subtitle groups, `EXT-X-I-FRAME-STREAM-INF` ignored), media playlists (`EXTINF`, `EXT-X-BYTERANGE`, `EXT-X-MAP`, `EXT-X-KEY`, `EXT-X-DISCONTINUITY`, `EXT-X-ENDLIST`, `EXT-X-MEDIA-SEQUENCE`). Relative URI resolution.
+- [x] *(6a)* Classification: `METHOD=AES-128` → supported (clear key fetched over HTTPS from the site, standard HLS, not DRM). `SAMPLE-AES`, `SAMPLE-AES-CTR`, or `KEYFORMAT` = FairPlay/Widevine → **"Protected (DRM) — not supported"**. No `EXT-X-ENDLIST` → "Live — not supported yet".
 - [ ] Variant UI: resolution if present, else bandwidth only. Codecs → friendly names. Duration from the sum of `EXTINF` (fetch the chosen media playlist lazily for the size estimate). Separate audio groups listed when present.
 - [ ] Segment downloader (Core): parallel (4–6) segment fetch with the same `RequestContext`, per-segment retry, AES-128 decryption (`System.Security.Cryptography.Aes`, CBC, IV from the tag or the media sequence number), byte-range support, temp folder per job, resume by skipping completed segments, progress = segments + bytes.
 - [ ] FFmpeg integration: `FfmpegLocator` (bundled path / settings path / on-demand download, see Phase 10), `FfmpegRunner` (ArgumentList, `-progress pipe:1`, cancellation kills the process). Remux from a **local** playlist or concat list, so FFmpeg does no network access and never sees cookies.
-- [ ] `ContainerSelector` (Core): codecs → MP4/WebM/MKV with a reason string (§6.4).
+- [x] *(6a, as `HlsAnalysis.SelectContainer`)* `ContainerSelector` (Core): codecs → MP4/WebM/MKV with a reason string (§6.4).
 - [ ] Output naming and cleanup of the temp folder on success, cancel, or failure (keep on failure if resumable).
 - [ ] FFprobe after remux (optional) to confirm duration and resolution and record them.
 - [ ] Error UX: FFmpeg missing → offer the download/locate action; key fetch `403` → "Session expired, replay the video".
+
+**Checkpoint 6a (2026-11-27), done:** Core only, no UI change. `Core/Media/Hls/HlsPlaylists` (records: master with variants, `EXT-X-MEDIA` renditions and session keys; media playlist with segments, keys, maps, byte ranges, discontinuities, sequence numbers, `IsLive`, `IsFragmentedMp4`), `HlsParser` (RFC 8216; BOM/CRLF/blank lines tolerated; quoted attributes with commas; relative and absolute URI resolution, http(s) only; I-frame streams ignored; `EXT-X-BYTERANGE` with and without offset (continues per resource); key state carried until changed, `METHOD=NONE` clears it; the line after `#EXTINF` is that segment's address, an unusable one drops the segment without its tags leaking to a later line (bug caught by the tests); 16 MB cap), `HlsAnalysis` (Supported / Protected (SAMPLE-AES, SAMPLE-AES-CTR, any non-identity KEYFORMAT, DRM session keys) / Live (no ENDLIST and not VOD) / Empty; friendly codec names; `SelectContainer` MP4/WebM/MKV with reason; "1080p · 4.8 Mbps · H.264/AAC · ≈ 687 MB est." labels from data only; best-first sort), `HlsDecryptor` (AES-128-CBC/PKCS#7, IV from the tag or the sequence number big-endian; checked against the NIST SP 800-38A vector). 37 new tests (525 total). **Next: 6b** (needs your FFmpeg decision).
 
 **Files:** `Core/Media/Hls/*`, `Core/Media/SegmentDownloader.cs`, `Core/Media/Ffmpeg/*`, picker UI updates.
 **Packages/tools:** FFmpeg + FFprobe (LGPL build), external executables.
