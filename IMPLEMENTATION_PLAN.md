@@ -394,7 +394,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [x] Host a WebView2 using an explicit environment (separate spike user data folder under `AppPaths.Root\Diagnostics`). Log `CoreWebView2Environment.BrowserVersionString`.
 - [x] **Media responses:** log `WebResourceResponseReceived` while playing a direct MP4, Apple's HLS fMP4 sample, Mux's HLS TS sample, and an Akamai DASH stream → §11 F1, F4. *Redirect reporting still unobserved (no 3xx in tests); re-check in Phase 5.*
 - [x] **Manifest body:** `GetContentAsync()` returned every manifest body → §11 F2.
-- [ ] **Cookies (manual, you):** sign in to a site you own or use, open it in the Diagnostics window, click **Cookies for page**. Confirm HttpOnly cookies are counted (only counts are recorded).
+- [x] **Cookies (manual, you):** signed in to GitHub in the Diagnostics window → 18 cookies, 12 HttpOnly → §11 F13.
 - [x] **Downloads:** `DownloadStarting` with `Handled` + custom path, pause/resume, and closing the WebView mid-download → §11 F5.
 - [x] **Blocking:** three-argument filter (all source kinds), test blocklist, timing and UI-lag on news sites → §11 F6, F7. *Optional manual check: tick "Intercept all requests" and scroll/type on a heavy site.*
 - [x] **Tracking prevention:** Balanced vs. Strict request counts → §11 F8.
@@ -732,7 +732,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 | V4 | Is `WebResourceRequested` with `"*"` + All source kinds fast enough on heavy sites (UI thread)? | Spike | ☑ Yes (F6) |
 | V5 | Can an MV3 blocker (uBO Lite) run in WebView2 via `AddBrowserExtensionAsync`, and how well? | Spike | ☐ Manual test pending (tooling ready) |
 | V6 | Does `NewWindowRequested` + `args.NewWindow` keep `window.opener` for OAuth popups? | Spike | ☑ Yes (F10) |
-| V13 | Does `CookieManager.GetCookiesAsync` return HttpOnly cookies for a signed-in site? | Spike | ☐ Manual test pending |
+| V13 | Does `CookieManager.GetCookiesAsync` return HttpOnly cookies for a signed-in site? | Spike | ☑ Yes (F13) |
 | V7 | Which keys does WebView2 consume vs. forward to WPF (`Ctrl+L`, `Ctrl+T`, `Ctrl+W`, `F5`, …)? Should we set `AreBrowserAcceleratorKeysEnabled`? | Phase 2 | ☐ |
 | V8 | Is the WebView2 Find API available and stable in SDK 1.0.4370.26? | Phase 2 | ☐ |
 | V9 | How stable is the in-box WPF Fluent `ThemeMode` in .NET 10 for our controls? | Phase 0 | ◐ Builds and runs; visual check of Light/Dark/System pending |
@@ -763,6 +763,9 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | F11 | V12 controller options | `EnsureCoreWebView2Async(environment, controllerOptions)` with `ProfileName` works for both the main WebView and popups. | Phase 1 can use named profiles and InPrivate as designed. |
 | F12 | Logging privacy | CNN's live HLS URLs carry long tokens **in the path** (`/live/use1/d17_Cixj…`), which `Redactor.Url` keeps (it strips only query and fragment). | Phase 5: add `Redactor.MediaUrl` that shortens long or opaque path segments, and use it for all media URLs in logs and history. |
 
+| F13 | V13 cookies (manual, by you, 2026-11-26) | Signed in to GitHub inside the Diagnostics profile: `GetCookiesAsync("https://github.com/")` returned 18 cookies, **12 HttpOnly**, 18 Secure, 8 session cookies, 2 distinct domains. | App-managed downloads (Phase 5+) can send the same session cookies the browser would, including HttpOnly ones, so sign-in-protected media can work. Fetch them per exact URL at download start; never log or persist them. |
+| F14 | Popup gesture flag (manual) | Clicking the **Open popup** button gave `IsUserInitiated = True`; the automated script-only popup gave `False` (F10). | The flag reliably separates user-clicked popups from script popups, so Phase 2's popup blocker can rely on it. |
+
 **Ad-block engine: summary so far.** Network interception performs well (F6, F7), so an engine running inside our app is viable (options C or D in §6.5). The extension route (option B) still needs the manual uBO Lite test (V5). Option C needs a Rust toolchain, which isn't installed yet.
 
 ---
@@ -785,13 +788,15 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 
 ## 13. How to continue with the coding agent
 
-1. **Start each session** by asking the agent to read `IMPLEMENTATION_PLAN.md` (this file) and the current code. Name the phase or task, for example: *"Implement Phase 1, items 1–4."*
+1. **Start each session** by asking the agent to read `PROGRESS.md` (short handoff summary), then `IMPLEMENTATION_PLAN.md` (this file) and the current code. Name the phase or task, for example: *"Implement Phase 1, items 1–4."*
 2. **One phase (or a slice of one) per session.** Don't skip ahead. Later phases assume earlier checklists are done.
 3. **The agent must update this file** in the same change as the code:
    - tick completed checkboxes (`- [x]`);
    - update **Current phase** at the top;
    - add spike results to §11 and decisions to §12;
-   - move anything discovered to §9 (deferred) or §10 (verify) rather than silently expanding scope.
+   - move anything discovered to §9 (deferred) or §10 (verify) rather than silently expanding scope;
+   - update `PROGRESS.md` (current state, next task, last updated).
+8. **The agent never commits.** The user reviews and commits.
 4. **Verification is explicit:** the agent states what it built, what it ran (build, tests), and what you must check manually in Visual Studio. It never claims to have run the app unless it did.
 5. **Before a new dependency** is added, the agent explains why and updates §3. New packages need a reason.
 6. **Commit per completed slice** with a message referencing the phase (for example, `Phase 1: address bar and navigation commands`).
