@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 automated tests done; extension and cookie tests are manual and pending → next: Phase 1
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done (optional uBO Lite extension test pending) · Phase 1 implemented, awaiting your manual checks
 
 ---
 
@@ -421,21 +421,24 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 **Depends on:** Phase 0 (and spike learnings).
 
 **Checklist**
-- [ ] `BrowserEnvironment` creates the shared environment once (async, at startup), with the user data folder from `AppPaths`.
-- [ ] Runtime check: if `GetAvailableBrowserVersionString` fails, show a dialog with the official WebView2 runtime download link and exit gracefully.
-- [ ] `BrowserTab` wraps the WebView2 control: `EnsureCoreWebView2Async(environment)`, and exposes `Navigate`, `GoBack`, `GoForward`, `Reload`, `Stop` plus events (`UrlChanged`, `TitleChanged`, `LoadingChanged`, `NavigationFailed`, `HistoryChanged`).
-- [ ] `UrlOrSearchResolver` (Core): handles a scheme present, bare domain (`example.com`), `localhost:port`, IP addresses, and search text → search URL. **Test heavily.**
-- [ ] `TabViewModel` + `MainWindowViewModel` with toolbar commands, and `CanExecute` tied to `CanGoBack`/`IsLoading`.
-- [ ] Toolbar UI: Back, Forward, Reload/Stop (toggle), Home, address bar (selects all on focus; shows the full URL while editing and the clean URL otherwise; Enter navigates; Esc reverts).
-- [ ] Loading indicator (thin progress bar or spinner on reload).
-- [ ] Errors: `NavigationCompleted.IsSuccess == false` → show a friendly in-view message (hide the WebView to avoid airspace issues) with Retry, mapped from `WebErrorStatus`. Keep WebView2's own cert-error page. **Exception (spike F5):** a navigation that turns into a download completes with `ConnectionAborted`; don't show an error for it.
-- [ ] All per-WebView setup (event handlers, settings, scripts, filters) lives in one `BrowserTab` initialisation method, because new-window WebViews don't inherit any of it (spike F10).
-- [ ] `ProcessFailed`: renderer crash → "This page crashed — Reload". Browser process exit → recreate the environment and WebView, then reload.
-- [ ] Set `PreferredTrackingPreventionLevel = Balanced` (Strict as a later setting).
-- [ ] Set `PreferredColorScheme` to follow the app theme.
-- [ ] Disable WebView2 dev tools and the default context-menu items **only in Release** if desired (keep DevTools in Debug).
+- [x] `BrowserEnvironment` creates the shared environment once (lazily, when the first tab starts), with the user data folder from `AppPaths` and profile "Default". `RecreateAsync` replaces it after a browser-process crash, shared by all tabs.
+- [x] Runtime check: if `GetAvailableBrowserVersionString` fails, show a dialog with the official WebView2 runtime download link and exit gracefully.
+- [x] `BrowserTab` wraps the WebView2 control: `EnsureCoreWebView2Async(environment, controllerOptions)`, and exposes `Navigate`, `GoBack`, `GoForward`, `Reload`, `Stop`. *Simplified events:* one `StateChanged` (URL, title, loading, back/forward are properties), plus `NavigationStarted` and `ProblemOccurred`.
+- [x] `UrlOrSearchResolver` (Core): handles a scheme present, bare domain (`example.com`), `localhost:port`, IP addresses, IDN, `?` forced search, and search text → search URL. `javascript:`/`vbscript:` blocked. About 60 test cases, plus 11 for `UrlDisplay`.
+- [x] `TabViewModel` + `MainWindowViewModel` with toolbar commands, and `CanExecute` tied to `CanGoBack`/`CanGoForward`.
+- [x] Toolbar UI: Back, Forward, Reload/Stop (toggle), Home, address bar (selects all on focus; shows the full URL while editing and the clean URL otherwise via `UrlDisplay`; Enter navigates; Esc reverts). The theme picker and debug buttons moved into a "⋯" menu.
+- [x] Loading indicator (thin indeterminate bar along the bottom of the toolbar).
+- [x] Errors: `NavigationCompleted.IsSuccess == false` → show a friendly in-view message (hide the WebView to avoid airspace issues) with Retry, mapped from `WebErrorStatus`. Keep WebView2's own cert-error page. **Exception (spike F5):** a navigation that turns into a download completes with `ConnectionAborted`; don't show an error for it. *Implemented as an allowlist of network-level statuses, and only when no HTTP response arrived (a site's own 404 page is shown as-is); see `NavigationErrors`.*
+- [x] All per-WebView setup (event handlers, settings, scripts, filters) lives in one `BrowserTab` initialisation method, because new-window WebViews don't inherit any of it (spike F10).
+- [x] `ProcessFailed`: renderer crash or hang → "This page crashed / isn't responding — Reload". Browser process exit → recreate the environment and WebView automatically, then reload; a second exit within 30 s shows "The web engine stopped — Try again" instead of looping.
+- [x] Set `PreferredTrackingPreventionLevel = Balanced` (Strict as a later setting).
+- [x] Set `PreferredColorScheme` to follow the app theme (also `DefaultBackgroundColor`, to avoid a white flash in dark mode).
+- [x] DevTools disabled **only in Release** (kept in Debug). Default context menu kept: it provides copy/paste and other basics.
+- [x] *Interim (until Phase 2 tabs):* `NewWindowRequested` is always handled by us. A user-clicked `target=_blank` link loads in the same page; script popups are blocked. OAuth popups that need `window.opener` won't work until Phase 2.
 
-**Files:** `Browser/BrowserEnvironment.cs`, `Browser/BrowserTab.cs`, `ViewModels/MainWindowViewModel.cs`, `ViewModels/TabViewModel.cs`, `Views/MainWindow.xaml`, `Views/Controls/AddressBar.xaml`, `Core/Navigation/UrlOrSearchResolver.cs`.
+**Implementation notes (2026-11-26):** the agent built the solution (0 warnings, 0 errors), ran 113 passing tests (41 old + 72 new), and launched the Debug exe: the window showed the new toolbar, loaded the Bing home page (title "Search - Microsoft Bing - AJBrowser", address bar "www.bing.com"), and closed cleanly. The log showed the runtime check and environment creation. **Not yet checked by a person:** typing in the address bar, search, Back/Forward, Reload/Stop, the error panel, crash recovery, theme switching of pages. See the manual verification list below.
+
+**Files:** `Browser/BrowserEnvironment.cs`, `Browser/BrowserTab.cs`, `Browser/PageProblem.cs`, `ViewModels/MainWindowViewModel.cs`, `ViewModels/TabViewModel.cs`, `Views/MainWindow.xaml`, `Views/Controls/AddressBar.xaml`, `Core/Navigation/UrlOrSearchResolver.cs`, `Core/Navigation/UrlDisplay.cs`, `Core/Navigation/BrowserDefaults.cs`.
 **Packages:** none new.
 **Risks / edge cases:** `EnsureCoreWebView2Async` must finish before calling `CoreWebView2`. Guard calls and queue the initial navigation. Inputs to consider: `about:blank`, `file://` (allow, or block?), `javascript:` in the address bar (block), IDN domains, and input like `c#` (search, not a URL).
 **Manual verification:** F5, type `example.com` → it loads, the title shows. Type `best wpf tutorials` → search results. Click links, then Back/Forward. Reload, and Stop during a slow load. Type `http://nonexistent.invalid` → friendly error + Retry. Disconnect Wi-Fi → error state. Open `chrome://crash` in Debug if allowed (or kill the msedgewebview2 renderer in Task Manager) → crash UI.
@@ -762,7 +765,6 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | F10 | V6 popups | With `args.NewWindow` assigned inside a deferral, `window.opener` worked both ways, and `window.close()` raised `WindowCloseRequested`. A script popup had `IsUserInitiated = false` and **WebView2 did not block it**. **Per-WebView setup is not inherited by new windows** (the popup failed with `HostNameNotResolved` until its own virtual-host mapping was added). | **Phase 2:** implement our own popup blocking for non-user-initiated popups. Put all per-WebView setup (handlers, scripts, filters, mappings) in one `BrowserTab` initialisation used for **every** WebView, including popups. |
 | F11 | V12 controller options | `EnsureCoreWebView2Async(environment, controllerOptions)` with `ProfileName` works for both the main WebView and popups. | Phase 1 can use named profiles and InPrivate as designed. |
 | F12 | Logging privacy | CNN's live HLS URLs carry long tokens **in the path** (`/live/use1/d17_Cixj…`), which `Redactor.Url` keeps (it strips only query and fragment). | Phase 5: add `Redactor.MediaUrl` that shortens long or opaque path segments, and use it for all media URLs in logs and history. |
-
 | F13 | V13 cookies (manual, by you, 2026-11-26) | Signed in to GitHub inside the Diagnostics profile: `GetCookiesAsync("https://github.com/")` returned 18 cookies, **12 HttpOnly**, 18 Secure, 8 session cookies, 2 distinct domains. | App-managed downloads (Phase 5+) can send the same session cookies the browser would, including HttpOnly ones, so sign-in-protected media can work. Fetch them per exact URL at download start; never log or persist them. |
 | F14 | Popup gesture flag (manual) | Clicking the **Open popup** button gave `IsUserInitiated = True`; the automated script-only popup gave `False` (F10). | The flag reliably separates user-clicked popups from script popups, so Phase 2's popup blocker can rely on it. |
 
@@ -782,6 +784,10 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | _pending_ | Ad-block engine: adblock-rust shim vs. extension vs. other | Decide after Phase 0.5 |
 | 2026-11-26 | No `global.json` for now | Only the .NET 11 SDK is installed locally; it builds net10.0. Revisit when CI is added. |
 | 2026-11-26 | Theme: in-box Fluent `ThemeMode` + own semantic brush dictionaries (tentative) | No dependency; switch to custom-only or WPF-UI if the V9 visual check finds problems |
+| 2026-11-26 | Phase 1 defaults: Bing as home page and search engine (`BrowserDefaults`) | Placeholder until the search-engine and homepage settings in Phase 3 |
+| 2026-11-26 | Address input: typed `file://`, `data:`, `about:` allowed; `javascript:`/`vbscript:` blocked; text with spaces is always a search; bare hosts use https, localhost/IPs/single-word-with-port use http | Matches mainstream browsers; no Public Suffix List needed yet |
+| 2026-11-26 | Error panel only for network-level failures with no HTTP response | A site's own 404/500 page is more useful; cert errors keep WebView2's own page; avoids false error panels for Stop and downloads |
+| 2026-11-26 | Phase 1 popups: user-clicked new windows open in the same page, script popups are blocked | No tabs yet, and WebView2-created windows would skip our setup (F10). Replaced in Phase 2 |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---
@@ -796,8 +802,8 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
    - add spike results to §11 and decisions to §12;
    - move anything discovered to §9 (deferred) or §10 (verify) rather than silently expanding scope;
    - update `PROGRESS.md` (current state, next task, last updated).
-8. **The agent never commits.** The user reviews and commits.
-4. **Verification is explicit:** the agent states what it built, what it ran (build, tests), and what you must check manually in Visual Studio. It never claims to have run the app unless it did.
-5. **Before a new dependency** is added, the agent explains why and updates §3. New packages need a reason.
-6. **Commit per completed slice** with a message referencing the phase (for example, `Phase 1: address bar and navigation commands`).
-7. If reality contradicts the plan (an API doesn't behave as documented), **update the plan first**, then the code.
+4. **The agent never commits.** The user reviews and commits.
+5. **Verification is explicit:** the agent states what it built, what it ran (build, tests), and what you must check manually in Visual Studio. It never claims to have run the app unless it did.
+6. **Before a new dependency** is added, the agent explains why and updates §3. New packages need a reason.
+7. **You commit per completed slice** (after reviewing), with a message referencing the phase (for example, `Phase 1: address bar and navigation commands`).
+8. If reality contradicts the plan (an API doesn't behave as documented), **update the plan first**, then the code.

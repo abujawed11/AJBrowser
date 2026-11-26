@@ -12,6 +12,8 @@
     <SolidColorBrush x:Key="TabActiveBackgroundBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="TabHoverBackgroundBrush" Color="#E0E0E0" />
     <SolidColorBrush x:Key="TabInactiveBackgroundBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="ToolbarButtonHoverBrush" Color="#DCDCDC" />
+    <SolidColorBrush x:Key="ToolbarButtonPressedBrush" Color="#CFCFCF" />
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1A1A1A" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#5F5F5F" />
     <SolidColorBrush x:Key="AccentBrush" Color="#0067C0" />

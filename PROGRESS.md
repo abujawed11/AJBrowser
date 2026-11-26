@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ (optional item pending) · **Next: Phase 1**
+**Last updated:** 2026-11-26 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ (optional item pending) · Phase 1 🔶 built, awaiting your manual checks · **Next: Phase 2**
 
 ---
 
@@ -42,8 +42,9 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **41 passing tests**.
-   - F5: a window titled **AJBrowser** opens, with a Theme selector and Debug-only **Diagnostics** / **Throw test exception** buttons.
+   - Test Explorer: expect **113 passing tests**.
+   - F5: the browser window opens and loads the Bing home page. The **⋯** menu (top right) has Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
+   - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
 4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (logs, WebView2 profile, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
 
 **CLI equivalents** (run in the repo root):
@@ -62,19 +63,25 @@ README.md                    build/run + data folders
 IMPLEMENTATION_PLAN.md       full roadmap (phases 0–10), findings, decisions
 PROGRESS.md                  this file
 AJBrowser/                   WPF app (net10.0-windows)
-  App.xaml(.cs)              OnStartup composition, global exception handlers, --diagnostics args (DEBUG)
-  AppServices.cs             hand-written composition root (no DI container)
+  App.xaml(.cs)              OnStartup composition, WebView2 runtime check, global exception handlers, --diagnostics args (DEBUG)
+  AppServices.cs             hand-written composition root (no DI container); CreateTab()
+  Browser/BrowserEnvironment.cs  shared CoreWebView2Environment (lazy, recreatable), runtime check, profile "Default"
+  Browser/BrowserTab.cs      wraps one WebView2: Configure() = ALL per-WebView setup, navigation, crash recovery
+  Browser/PageProblem.cs     error/crash panel model + which navigation errors get a panel
   Services/ThemeService.cs   Fluent ThemeMode (WPF0001 suppressed here) + Light/Dark brush swap, follows Windows
-  Services/ShellService.cs   open folder in Explorer
-  ViewModels/MainWindowViewModel.cs   CommunityToolkit.Mvvm ([ObservableProperty], [RelayCommand])
-  Views/MainWindow.xaml(.cs) placeholder chrome bar + content area (no browser yet)
-  Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes)
+  Services/ShellService.cs   open folder in Explorer, open URL in the default browser
+  ViewModels/MainWindowViewModel.cs   window state: active tab, theme, debug commands
+  ViewModels/TabViewModel.cs address bar, title, loading, back/forward, problem panel
+  Views/MainWindow.xaml(.cs) toolbar, ⋯ menu, loading bar, page area + problem panel
+  Views/Controls/AddressBar  select-all on focus, Enter/Esc handling
+  Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle)
   Diagnostics/               Phase 0.5 spike, DEBUG ONLY (excluded from Release via csproj)
 AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Infrastructure/AppPaths.cs %LOCALAPPDATA%\AJBrowser\{WebView2,Data,Filters,Logs,Temp,Tools}
   Logging/                   LogEntry, ILogSink, AppLogger (always redacts), FileLogSink (daily, 5 MB roll, keep 10)
   Security/Redactor.cs       strips URL query/fragment/user-info; redacts Cookie/Authorization/Bearer in text
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging (41 tests)
+  Navigation/                UrlOrSearchResolver, UrlDisplay, BrowserDefaults (Bing home/search until Phase 3)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation (113 tests)
 ```
 
 **Packages:**
@@ -87,8 +94,9 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging (41 tests)
 |---|---|---|
 | 0 Foundation | ✅ Done | User verified and committed ("phase 0 done") |
 | 0.5 Feasibility spike | ✅ Done | Automated suite + manual cookie test done. **Optional/pending:** uBlock Origin Lite extension test (V5). |
-| 1 Single-tab browser | ⏭ **Next** | See §6 below |
-| 2–10 | Not started | See plan |
+| 1 Single-tab browser | 🔶 Built | Agent: build, 113 tests, launch + home page load. **You:** the manual checks in §6. |
+| 2 Tabs | ⏭ **Next** (after your Phase 1 checks) | See plan "Phase 2" |
+| 3–10 | Not started | See plan |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
 - Media responses expose content type, length and range, and manifest bodies are readable. But content types are unreliable, DASH segments look like `video/mp4`, and fMP4 HLS uses a byte-range `main.mp4`, so suppress anything a manifest references.
@@ -105,21 +113,25 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging (41 tests)
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: Phase 1 (working single-tab browser)
+## 6. Next task: check Phase 1, then Phase 2 (tabs)
 
-Full checklist: `IMPLEMENTATION_PLAN.md` → "Phase 1". In short:
-- **`BrowserEnvironment`:** creates one shared WebView2 environment, with the user data folder from `AppPaths.WebView2UserData`.
-- **Runtime check:** if the WebView2 runtime is missing, show a friendly dialog with the download link.
-- **`BrowserTab`:** wraps the WebView2 control. Put all per-WebView setup in one init method.
-- **`UrlOrSearchResolver`** (Core) with about 30 unit tests: URL vs. search text, bare domains, localhost, IPs, `javascript:` blocked.
-- **Toolbar:** Back, Forward, Reload/Stop, Home, and an address bar (select-all on focus, Enter navigates, Esc reverts), plus a loading indicator.
-- **Error states:** a friendly page with Retry, but none for a download's `ConnectionAborted`.
-- **Crash handling:** recover from `ProcessFailed` (renderer crash, browser process exit).
-- **Defaults:** tracking prevention Balanced; `PreferredColorScheme` follows the app theme.
-- **Leave the Diagnostics window in place** (it's DEBUG-only and useful for later phases).
+**Your manual checks for Phase 1** (F5 in Visual Studio, Debug):
+1. Type `example.com`, then Enter: the page loads, the window title shows "Example Domain", the address bar shows `example.com`.
+2. Type `best wpf tutorials`: Bing search results. Type `c#`: a search, not a site.
+3. Click the address bar: the whole URL is selected and shows `https://…`. Type something, press Esc: it reverts.
+4. Click a few links, then Back/Forward. Back is greyed out on the first page.
+5. Reload. During a slow load the Reload icon turns into ✕ (Stop); press it.
+6. Type `http://nonexistent.invalid`: the "Can't find this site" panel with **Try again**. Turn Wi-Fi off and reload a page: an error panel. Turn it back on, then Try again.
+7. Crash test: in Task Manager, end a `msedgewebview2.exe` process with "renderer" in its command line (add the column "Command line"), and check you get the "This page crashed" panel. Ending the main `msedgewebview2.exe` process (the one with no `--type=`) should recover by itself and reload the page.
+8. ⋯ menu, then Theme Dark/Light: the toolbar switches, and sites that support dark mode switch too.
+9. Click a `target=_blank` link: it opens in the same page (Phase 1 behaviour until tabs exist).
+
+Report anything odd, and the agent will fix it before Phase 2.
+
+**Phase 2 in short** (full checklist: plan, Phase 2): a tab strip with favicons, new-window handling into real tabs (with our own popup blocker), reopen closed tab, keyboard shortcuts, find, zoom, fullscreen, the context menu "Open link in new tab".
 
 **Suggested prompt on the new PC:**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 1.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then implement Phase 2.
 
 ## 7. Optional pending manual test: uBlock Origin Lite (V5)
 

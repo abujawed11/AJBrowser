@@ -12,4 +12,15 @@ public sealed class ShellService
         startInfo.ArgumentList.Add(path);
         Process.Start(startInfo)?.Dispose();
     }
+
+    /// <summary>Opens a web page in the user's default browser. Only http(s) URLs are allowed.</summary>
+    public void OpenUrl(Uri url)
+    {
+        if (!url.IsAbsoluteUri || (url.Scheme != Uri.UriSchemeHttps && url.Scheme != Uri.UriSchemeHttp))
+        {
+            throw new ArgumentException("Only http(s) URLs can be opened.", nameof(url));
+        }
+
+        Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true })?.Dispose();
+    }
 }

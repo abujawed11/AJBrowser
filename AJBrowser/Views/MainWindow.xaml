@@ -4,9 +4,11 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:AJBrowser.ViewModels"
+        xmlns:svc="clr-namespace:AJBrowser.Services"
+        xmlns:controls="clr-namespace:AJBrowser.Views.Controls"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainWindowViewModel, IsDesignTimeCreatable=False}"
-        Title="AJBrowser"
+        Title="{Binding ActiveTab.WindowTitle}"
         Width="1280" Height="800"
         MinWidth="640" MinHeight="400"
         WindowStartupLocation="CenterScreen"
@@ -25,64 +27,126 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Chrome bar: becomes the tab strip + toolbar in Phases 1-2. -->
+        <!-- ============ Toolbar ============ -->
         <Border Grid.Row="0"
                 Height="{StaticResource ChromeBarHeight}"
                 Background="{DynamicResource ChromeBackgroundBrush}"
                 BorderBrush="{DynamicResource ChromeBorderBrush}"
                 BorderThickness="0,0,0,1">
-            <DockPanel Margin="12,0" LastChildFill="False">
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="&#xE774;"
+            <Grid>
+                <DockPanel Margin="6,0" LastChildFill="True">
+                    <!-- Navigation buttons (bound to the active tab). -->
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
+                                DataContext="{Binding ActiveTab}">
+                        <Button Content="&#xE72B;" Command="{Binding GoBackCommand}"
+                                Style="{StaticResource ToolbarButtonStyle}"
+                                ToolTip="Back" AutomationProperties.Name="Back" />
+                        <Button Content="&#xE72A;" Command="{Binding GoForwardCommand}"
+                                Style="{StaticResource ToolbarButtonStyle}"
+                                ToolTip="Forward" AutomationProperties.Name="Forward" />
+                        <Button Command="{Binding ReloadOrStopCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                                    <Setter Property="Content" Value="&#xE72C;" />
+                                    <Setter Property="ToolTip" Value="Reload" />
+                                    <Setter Property="AutomationProperties.Name" Value="Reload" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                            <Setter Property="Content" Value="&#xE711;" />
+                                            <Setter Property="ToolTip" Value="Stop loading" />
+                                            <Setter Property="AutomationProperties.Name" Value="Stop loading" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="&#xE80F;" Command="{Binding HomeCommand}"
+                                Style="{StaticResource ToolbarButtonStyle}"
+                                ToolTip="Home" AutomationProperties.Name="Home" />
+                    </StackPanel>
+
+                    <!-- App menu (theme, data folder, debug tools). A ContextMenu is a popup, so it can open over the page. -->
+                    <Button x:Name="MenuButton" DockPanel.Dock="Right"
+                            Content="&#xE712;"
+                            Click="MenuButton_Click"
+                            Style="{StaticResource ToolbarButtonStyle}"
+                            VerticalAlignment="Center"
+                            ToolTip="Settings and more" AutomationProperties.Name="Settings and more">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Theme">
+                                    <MenuItem Header="System" IsChecked="{Binding IsSystemTheme, Mode=OneWay}"
+                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.System}" />
+                                    <MenuItem Header="Light" IsChecked="{Binding IsLightTheme, Mode=OneWay}"
+                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.Light}" />
+                                    <MenuItem Header="Dark" IsChecked="{Binding IsDarkTheme, Mode=OneWay}"
+                                              Command="{Binding SetThemeCommand}" CommandParameter="{x:Static svc:AppTheme.Dark}" />
+                                </MenuItem>
+                                <MenuItem Header="Open data folder" Command="{Binding OpenDataFolderCommand}" />
+                                <Separator Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}" />
+                                <MenuItem Header="Diagnostics (debug)" Click="OpenDiagnostics_Click"
+                                          Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}" />
+                                <MenuItem Header="Throw test exception (debug)" Command="{Binding ThrowTestExceptionCommand}"
+                                          Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+
+                    <controls:AddressBar DataContext="{Binding ActiveTab}"
+                                         Margin="6,0"
+                                         Height="34"
+                                         VerticalAlignment="Center" />
+                </DockPanel>
+
+                <!-- Thin loading indicator along the bottom edge of the toolbar. -->
+                <ProgressBar DataContext="{Binding ActiveTab}"
+                             IsIndeterminate="{Binding IsLoading}"
+                             Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}"
+                             VerticalAlignment="Bottom"
+                             Height="2" MinHeight="0"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Foreground="{DynamicResource AccentBrush}"
+                             AutomationProperties.Name="Page loading" />
+            </Grid>
+        </Border>
+
+        <!-- ============ Page area ============ -->
+        <Grid Grid.Row="1" DataContext="{Binding ActiveTab}" Background="{DynamicResource ContentBackgroundBrush}">
+            <!-- The WebView2 host. Hidden while a problem panel is shown (WPF can't draw over a WebView2). -->
+            <ContentPresenter Content="{Binding BrowserView}"
+                              Visibility="{Binding IsBrowserVisible, Converter={StaticResource BoolToVisibility}}" />
+
+            <!-- Problem panel: network errors, crashes, engine failures. -->
+            <ScrollViewer Visibility="{Binding HasProblem, Converter={StaticResource BoolToVisibility}}"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520" Margin="24">
+                    <TextBlock Text="&#xE783;"
                                FontFamily="{StaticResource IconFontFamily}"
-                               FontSize="{StaticResource IconSize}"
-                               Foreground="{DynamicResource AccentBrush}"
-                               VerticalAlignment="Center" />
-                    <TextBlock Text="AJBrowser" Margin="8,0,0,0" FontWeight="SemiBold" VerticalAlignment="Center" />
-                </StackPanel>
-
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Diagnostics"
-                            Click="OpenDiagnostics_Click"
-                            Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}"
-                            ToolTip="DEBUG only: Phase 0.5 WebView2 feasibility spike"
-                            Margin="0,0,8,0" />
-                    <Button Content="Throw test exception"
-                            Command="{Binding ThrowTestExceptionCommand}"
-                            Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}"
-                            ToolTip="DEBUG only: checks the global error handler"
-                            Margin="0,0,12,0" />
-                    <TextBlock Text="Theme" VerticalAlignment="Center" Margin="0,0,8,0"
+                               FontSize="40"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding Problem.Title}"
+                               Margin="0,16,0,0"
+                               FontSize="{StaticResource HeadingFontSize}"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Problem.Message}"
+                               Margin="0,8,0,0"
+                               TextWrapping="Wrap"
                                Foreground="{DynamicResource TextSecondaryBrush}" />
-                    <ComboBox ItemsSource="{Binding Themes}"
-                              SelectedItem="{Binding SelectedTheme}"
-                              MinWidth="110"
-                              AutomationProperties.Name="Theme" />
+                    <TextBlock Text="{Binding Problem.Detail}"
+                               Margin="0,8,0,0"
+                               TextWrapping="Wrap"
+                               FontSize="{StaticResource CaptionFontSize}"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <Button Content="{Binding Problem.ActionText}"
+                            Command="{Binding RetryCommand}"
+                            HorizontalAlignment="Left"
+                            MinWidth="120"
+                            Margin="0,20,0,0" />
                 </StackPanel>
-            </DockPanel>
-        </Border>
-
-        <!-- Content area: will host the WebView2 tabs from Phase 1. -->
-        <Border Grid.Row="1" Background="{DynamicResource ContentBackgroundBrush}">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="560">
-                <TextBlock Text="AJBrowser"
-                           FontSize="{StaticResource TitleFontSize}"
-                           FontWeight="SemiBold"
-                           HorizontalAlignment="Center" />
-                <TextBlock Text="The foundation is ready. Browsing arrives in Phase 1."
-                           Margin="0,8,0,0"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center" />
-                <TextBlock Margin="0,24,0,0" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
-                           Foreground="{DynamicResource TextSecondaryBrush}">
-                    <Run Text="App data folder:" />
-                    <Run Text="{Binding DataFolder, Mode=OneWay}" Foreground="{DynamicResource TextPrimaryBrush}" />
-                </TextBlock>
-                <Button Content="Open data folder"
-                        Command="{Binding OpenDataFolderCommand}"
-                        HorizontalAlignment="Center"
-                        Margin="0,12,0,0" />
-            </StackPanel>
-        </Border>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </Window>

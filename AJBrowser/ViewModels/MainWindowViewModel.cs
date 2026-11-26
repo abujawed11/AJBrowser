@@ -7,31 +7,31 @@ using CommunityToolkit.Mvvm.Input;
 namespace AJBrowser.ViewModels;
 
 /// <summary>
-/// State and commands for the main window. In Phase 1 this grows tabs and navigation;
-/// for now it only proves the MVVM wiring, theming and diagnostics work.
+/// State and commands for the main window. Phase 1 has exactly one tab (<see cref="ActiveTab"/>);
+/// Phase 2 turns this into a collection of tabs.
 /// </summary>
-public partial class MainWindowViewModel : ObservableObject
+public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly ThemeService _theme;
     private readonly ShellService _shell;
     private readonly AppLogger _log;
 
-    public MainWindowViewModel(AppPaths paths, ThemeService theme, ShellService shell, AppLogger log)
+    public MainWindowViewModel(AppPaths paths, ThemeService theme, ShellService shell, TabViewModel activeTab, AppLogger log)
     {
         _theme = theme;
         _shell = shell;
         _log = log;
         DataFolder = paths.Root;
-        SelectedTheme = theme.Theme;
+        ActiveTab = activeTab;
     }
 
-    public IReadOnlyList<AppTheme> Themes { get; } = Enum.GetValues<AppTheme>();
-
-    /// <summary>Changing this (via the ComboBox) switches the theme immediately.</summary>
-    [ObservableProperty]
-    public partial AppTheme SelectedTheme { get; set; }
+    public TabViewModel ActiveTab { get; }
 
     public string DataFolder { get; }
+
+    public bool IsSystemTheme => _theme.Theme == AppTheme.System;
+    public bool IsLightTheme => _theme.Theme == AppTheme.Light;
+    public bool IsDarkTheme => _theme.Theme == AppTheme.Dark;
 
     public bool IsDebugBuild =>
 #if DEBUG
@@ -40,13 +40,14 @@ public partial class MainWindowViewModel : ObservableObject
         false;
 #endif
 
-    partial void OnSelectedThemeChanged(AppTheme value)
+    [RelayCommand]
+    private void SetTheme(AppTheme theme)
     {
-        if (_theme.Theme != value || value == AppTheme.System)
-        {
-            _theme.Apply(value);
-            _log.Info($"Theme changed to {value}");
-        }
+        _theme.Apply(theme);
+        _log.Info($"Theme changed to {theme}");
+        OnPropertyChanged(nameof(IsSystemTheme));
+        OnPropertyChanged(nameof(IsLightTheme));
+        OnPropertyChanged(nameof(IsDarkTheme));
     }
 
     [RelayCommand]
@@ -57,4 +58,6 @@ public partial class MainWindowViewModel : ObservableObject
     private void ThrowTestException() =>
         throw new InvalidOperationException(
             "Test exception from the debug button. This URL token must be redacted in the log: https://example.com/video.mp4?token=SHOULD_NOT_APPEAR");
+
+    public void Dispose() => ActiveTab.Dispose();
 }

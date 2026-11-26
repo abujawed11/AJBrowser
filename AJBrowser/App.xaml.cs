@@ -2,6 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
+using AJBrowser.Browser;
 using AJBrowser.Core.Logging;
 using AJBrowser.Core.Security;
 using AJBrowser.ViewModels;
@@ -13,6 +14,7 @@ public partial class App : Application
 {
     private AppServices? _services;
     private AppLogger? _log;
+    private MainWindowViewModel? _mainViewModel;
     private bool _isShowingErrorDialog;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -26,15 +28,26 @@ public partial class App : Application
             _log = _services.CreateLogger("App");
             _log.Info($"AJBrowser {GetVersion()} starting. .NET {Environment.Version}, {RuntimeInformation.OSDescription}, {RuntimeInformation.ProcessArchitecture}");
 
-            var viewModel = new MainWindowViewModel(
+            if (!CheckWebView2Runtime(_services))
+            {
+                Shutdown(2);
+                return;
+            }
+
+            var tab = _services.CreateTab();
+            _mainViewModel = new MainWindowViewModel(
                 _services.Paths,
                 _services.Theme,
                 _services.Shell,
+                tab,
                 _services.CreateLogger(nameof(MainWindowViewModel)));
 
-            var window = new MainWindow(viewModel);
+            var window = new MainWindow(_mainViewModel);
             MainWindow = window;
             window.Show();
+
+            // Starts the web engine and loads the home page. Never throws: problems show in the page area.
+            _ = tab.StartAsync();
 
 #if DEBUG
             // Phase 0.5 spike: "--diagnostics" opens the Diagnostics window. "--diagnostics-auto" also runs the
@@ -68,8 +81,45 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _log?.Info($"AJBrowser exiting with code {e.ApplicationExitCode}");
+        _mainViewModel?.Dispose();
         _services?.Dispose();
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// AJBrowser can't work without the Microsoft Edge WebView2 Runtime (preinstalled on Windows 11).
+    /// If it's missing, explain and offer the official download page instead of crashing.
+    /// </summary>
+    private bool CheckWebView2Runtime(AppServices services)
+    {
+        var version = BrowserEnvironment.GetInstalledRuntimeVersion();
+        if (version is not null)
+        {
+            _log?.Info($"WebView2 Runtime {version}");
+            return true;
+        }
+
+        _log?.Warn("WebView2 Runtime not found; showing the install prompt");
+        var answer = MessageBox.Show(
+            "AJBrowser needs the Microsoft Edge WebView2 Runtime, which isn't installed on this PC.\n\n" +
+            "Open the download page now? Install the \"Evergreen\" runtime, then start AJBrowser again.",
+            "AJBrowser",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (answer == MessageBoxResult.Yes)
+        {
+            try
+            {
+                services.Shell.OpenUrl(BrowserEnvironment.RuntimeDownloadUrl);
+            }
+            catch (Exception ex)
+            {
+                _log?.Error("Could not open the WebView2 download page", ex);
+            }
+        }
+
+        return false;
     }
 
     private void RegisterGlobalExceptionHandlers()
