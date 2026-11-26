@@ -1,0 +1,100 @@
+<Window x:Class="AJBrowser.Diagnostics.DiagnosticsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AJBrowser — Diagnostics (Phase 0.5 spike)"
+        Width="1400" Height="900" MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}">
+
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Setter Property="Padding" Value="10,4" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Margin" Value="0,0,14,6" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="GroupLabel" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,8,6" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="460" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Controls. Kept beside/above the WebView: WPF cannot draw on top of WebView2 ("airspace"). -->
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="10,10,10,4">
+            <DockPanel Margin="0,0,0,6">
+                <Button DockPanel.Dock="Right" Content="Go" Click="Go_Click" IsDefault="True" Margin="6,0,0,0" />
+                <TextBox x:Name="UrlBox" Text="https://example.com/" VerticalContentAlignment="Center" />
+            </DockPanel>
+
+            <WrapPanel>
+                <TextBlock Text="Media:" Style="{StaticResource GroupLabel}" />
+                <Button Content="MP4" Click="PlayMp4_Click" />
+                <Button Content="HLS (Apple fMP4)" Click="PlayHlsApple_Click" />
+                <Button Content="HLS (Mux TS)" Click="PlayHlsMux_Click" />
+                <Button Content="DASH" Click="PlayDash_Click" />
+                <CheckBox x:Name="MediaLogCheck" Content="Log media responses" IsChecked="True" Click="MediaLog_Click" />
+
+                <TextBlock Text="Blocking:" Style="{StaticResource GroupLabel}" />
+                <CheckBox x:Name="InterceptCheck" Content="Intercept all requests" Click="Intercept_Click" />
+                <CheckBox x:Name="BlockCheck" Content="Block test domains" Click="Block_Click" />
+                <TextBlock Text="Tracking prevention" VerticalAlignment="Center" Margin="0,0,6,6" />
+                <ComboBox x:Name="TrackingCombo" MinWidth="100" Margin="0,0,6,6" SelectionChanged="Tracking_SelectionChanged" />
+                <Button Content="Measure reload" Click="MeasureReload_Click"
+                        ToolTip="Reloads the current page and records request counts, timing and UI lag with the current settings" />
+            </WrapPanel>
+
+            <WrapPanel>
+                <TextBlock Text="Session:" Style="{StaticResource GroupLabel}" />
+                <Button Content="Cookies for page" Click="Cookies_Click" />
+                <Button Content="Popup test" Click="PopupTest_Click" />
+                <TextBlock Text="Extensions:" Style="{StaticResource GroupLabel}" />
+                <Button Content="Load unpacked…" Click="LoadExtension_Click" />
+                <Button Content="List" Click="ListExtensions_Click" />
+                <Button Content="Toggle on/off" Click="ToggleExtensions_Click" />
+            </WrapPanel>
+
+            <WrapPanel>
+                <TextBlock Text="Downloads:" Style="{StaticResource GroupLabel}" />
+                <TextBox x:Name="DownloadUrlBox" Width="320" Margin="0,0,6,6" VerticalContentAlignment="Center" />
+                <Button Content="Start" Click="StartDownload_Click" />
+                <Button Content="Pause" Click="PauseDownload_Click" />
+                <Button Content="Resume" Click="ResumeDownload_Click" />
+                <Button Content="Cancel" Click="CancelDownload_Click" />
+                <Button Content="Close WebView" Click="CloseWebView_Click" />
+                <Button Content="Recreate WebView" Click="RecreateWebView_Click" />
+                <TextBlock Text="Report:" Style="{StaticResource GroupLabel}" />
+                <Button Content="Run automated suite" Click="RunSuite_Click" FontWeight="SemiBold" />
+                <Button Content="Save report" Click="SaveReport_Click" />
+                <Button Content="Open reports folder" Click="OpenReports_Click" />
+            </WrapPanel>
+        </StackPanel>
+
+        <!-- The WebView2 control is created in code so it can be closed and recreated. -->
+        <Border x:Name="WebViewHost" Grid.Row="1" Grid.Column="0" Margin="10,0,5,0"
+                BorderBrush="{DynamicResource ChromeBorderBrush}" BorderThickness="1" />
+
+        <ListBox x:Name="LogList" Grid.Row="1" Grid.Column="1" Margin="5,0,10,0"
+                 FontFamily="Consolas" FontSize="11"
+                 VirtualizingPanel.IsVirtualizing="True"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+
+        <TextBlock x:Name="StatusText" Grid.Row="2" Grid.ColumnSpan="2" Margin="10,6,10,8"
+                   Foreground="{DynamicResource TextSecondaryBrush}" Text="Starting…" />
+    </Grid>
+</Window>

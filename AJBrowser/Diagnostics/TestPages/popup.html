@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>AJBrowser spike: popup</title>
+    <style>body { font-family: "Segoe UI", sans-serif; margin: 24px; }</style>
+</head>
+<body>
+    <h2>Popup</h2>
+    <p id="status"></p>
+    <script>
+        const hasOpener = !!window.opener;
+        document.getElementById('status').textContent = 'window.opener present: ' + hasOpener + ' (closing in 3 s)';
+        try { window.chrome.webview.postMessage(JSON.stringify({ kind: 'popup', hasOpener })); } catch (e) { }
+        if (hasOpener) {
+            window.opener.postMessage('hello-from-popup', '*');
+        }
+        setTimeout(() => window.close(), 3000);
+    </script>
+</body>
+</html>

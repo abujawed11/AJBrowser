@@ -42,6 +42,11 @@
                 </StackPanel>
 
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Diagnostics"
+                            Click="OpenDiagnostics_Click"
+                            Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}"
+                            ToolTip="DEBUG only: Phase 0.5 WebView2 feasibility spike"
+                            Margin="0,0,8,0" />
                     <Button Content="Throw test exception"
                             Command="{Binding ThrowTestExceptionCommand}"
                             Visibility="{Binding IsDebugBuild, Converter={StaticResource BoolToVisibility}}"

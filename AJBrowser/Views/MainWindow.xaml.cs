@@ -10,4 +10,11 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = viewModel;
     }
+
+    private void OpenDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+#if DEBUG
+        ((App)Application.Current).OpenDiagnostics();
+#endif
+    }
 }

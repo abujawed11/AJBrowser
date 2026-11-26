@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.1 · **Created:** 2026-11-26 · **Current phase:** Phase 0 implemented (awaiting your manual check) → next: Phase 0.5
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 automated tests done; extension and cookie tests are manual and pending → next: Phase 1
 
 ---
 
@@ -388,18 +388,21 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 **Scope:** a throwaway **DEBUG-only "Diagnostics" window** (or a `spike/` branch) with one WebView2 and a log pane. **Excluded:** production UI. Spike code may be deleted afterwards.
 **Depends on:** Phase 0.
 
+**How to run it:** in a Debug build, click **Diagnostics** in the main window. Or start `AJBrowser.exe --diagnostics` (interactive), `--diagnostics-auto` (all automated tests, writes a report and exits), or `--diagnostics-auto=media,popup,download,blocking` (a subset). Reports go to `%LOCALAPPDATA%\AJBrowser\Diagnostics\Reports\`. The spike uses its own WebView2 profile folder (`Diagnostics\WebView2`).
+
 **Checklist**
-- [ ] Host a WebView2 using an explicit environment (user data folder from `AppPaths`). Log `CoreWebView2Environment.BrowserVersionString`.
-- [ ] **Media responses:** log `WebResourceResponseReceived` (URL redacted, status, content type, lengths, resource context) while playing: a page with `<video src=*.mp4>`, Apple's public HLS sample streams, and DASH-IF test vectors. Confirm content types are visible, `206` ranges appear, and how redirects are reported.
-- [ ] **Manifest body:** check that `args.Response.GetContentAsync()` returns the `.m3u8`/`.mpd` body. Note failures.
-- [ ] **Cookies:** call `CookieManager.GetCookiesAsync(url)` for a media URL on a logged-in test site (your own). Confirm HttpOnly cookies are returned. Don't log values.
-- [ ] **Downloads:** handle `DownloadStarting` (`Handled = true`, custom `ResultFilePath`). Test pause/resume/`CanResume`. **Close the WebView while downloading:** does it continue?
-- [ ] **Blocking:** add `AddWebResourceRequestedFilter("*", All, Document|SharedWorker|ServiceWorker)`. Block a hard-coded test domain list. Measure handler count and timing on 3 heavy news sites, and check UI responsiveness (scrolling, typing in a TextBox).
-- [ ] **Tracking prevention:** compare request counts with `PreferredTrackingPreventionLevel` at Balanced vs. Strict.
-- [ ] **Extension path:** create the environment with `AreBrowserExtensionsEnabled = true`, load an unpacked MV3 blocker (for example, uBO Lite) via `AddBrowserExtensionAsync`, and check that blocking works without its popup.
-- [ ] **New windows:** `NewWindowRequested` with deferral + `args.NewWindow`. Verify that an OAuth-style popup keeps `window.opener`.
-- [ ] Optional: build a minimal adblock-rust C-ABI shim and call it once from C# (proves the toolchain).
-- [ ] Record findings in §11 and make the ad-block engine decision in §12.
+- [x] Host a WebView2 using an explicit environment (separate spike user data folder under `AppPaths.Root\Diagnostics`). Log `CoreWebView2Environment.BrowserVersionString`.
+- [x] **Media responses:** log `WebResourceResponseReceived` while playing a direct MP4, Apple's HLS fMP4 sample, Mux's HLS TS sample, and an Akamai DASH stream → §11 F1, F4. *Redirect reporting still unobserved (no 3xx in tests); re-check in Phase 5.*
+- [x] **Manifest body:** `GetContentAsync()` returned every manifest body → §11 F2.
+- [ ] **Cookies (manual, you):** sign in to a site you own or use, open it in the Diagnostics window, click **Cookies for page**. Confirm HttpOnly cookies are counted (only counts are recorded).
+- [x] **Downloads:** `DownloadStarting` with `Handled` + custom path, pause/resume, and closing the WebView mid-download → §11 F5.
+- [x] **Blocking:** three-argument filter (all source kinds), test blocklist, timing and UI-lag on news sites → §11 F6, F7. *Optional manual check: tick "Intercept all requests" and scroll/type on a heavy site.*
+- [x] **Tracking prevention:** Balanced vs. Strict request counts → §11 F8.
+- [ ] **Extension path (manual, you):** download uBlock Origin Lite for Chromium (unpacked), click **Load unpacked…**, then compare **Measure reload** on an ad-heavy site with the extension on and off (**Toggle on/off**). Click **Save report**.
+- [x] **New windows:** `NewWindowRequested` + deferral + `args.NewWindow` keeps `window.opener` → §11 F10.
+- [ ] Optional: minimal adblock-rust C-ABI shim. **Blocked:** no Rust toolchain installed (`cargo` not found). Only needed if option C is chosen.
+- [x] Record findings in §11.
+- [ ] Make the ad-block engine decision in §12. **Waits on the extension test and your view on adding a Rust build step** (see §11 summary).
 
 **Files:** `AJBrowser/Diagnostics/*` (DEBUG only) or a separate branch.
 **Packages:** none new (an optional Rust toolchain for the shim test).
@@ -425,7 +428,8 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [ ] `TabViewModel` + `MainWindowViewModel` with toolbar commands, and `CanExecute` tied to `CanGoBack`/`IsLoading`.
 - [ ] Toolbar UI: Back, Forward, Reload/Stop (toggle), Home, address bar (selects all on focus; shows the full URL while editing and the clean URL otherwise; Enter navigates; Esc reverts).
 - [ ] Loading indicator (thin progress bar or spinner on reload).
-- [ ] Errors: `NavigationCompleted.IsSuccess == false` → show a friendly in-view message (hide the WebView to avoid airspace issues) with Retry, mapped from `WebErrorStatus`. Keep WebView2's own cert-error page.
+- [ ] Errors: `NavigationCompleted.IsSuccess == false` → show a friendly in-view message (hide the WebView to avoid airspace issues) with Retry, mapped from `WebErrorStatus`. Keep WebView2's own cert-error page. **Exception (spike F5):** a navigation that turns into a download completes with `ConnectionAborted`; don't show an error for it.
+- [ ] All per-WebView setup (event handlers, settings, scripts, filters) lives in one `BrowserTab` initialisation method, because new-window WebViews don't inherit any of it (spike F10).
 - [ ] `ProcessFailed`: renderer crash → "This page crashed — Reload". Browser process exit → recreate the environment and WebView, then reload.
 - [ ] Set `PreferredTrackingPreventionLevel = Balanced` (Strict as a later setting).
 - [ ] Set `PreferredColorScheme` to follow the app theme.
@@ -451,7 +455,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [ ] Content host: all tab WebViews live in one `Grid`, and only the active one is `Visible` (preserves page state). Dispose the WebView on close.
 - [ ] Tab strip control: favicon, title (ellipsis, tooltip), close button, loading spinner, middle-click to close, "+" button, horizontal overflow (scroll or shrink). Drag-to-reorder is deferred to Phase 9.
 - [ ] Favicons via `FaviconChanged` → `GetFaviconAsync(PNG)` → `BitmapImage` (frozen), with a fallback icon.
-- [ ] `NewWindowRequested`: take a deferral, create a tab next to the opener, `args.NewWindow = newTab.CoreWebView2`, complete. Respect `args.IsUserInitiated` (block non-user popups with an indicator). Popup windows with `WindowFeatures` may open as tabs for now.
+- [ ] `NewWindowRequested`: take a deferral, create a tab next to the opener, `args.NewWindow = newTab.CoreWebView2`, complete. Respect `args.IsUserInitiated` (block non-user popups with an indicator). **WebView2 does not block them for us** (spike F10). Run the same `BrowserTab` initialisation on the new WebView before assigning `NewWindow`. Popup windows with `WindowFeatures` may open as tabs for now.
 - [ ] Closed-tab stack (URL, title, index; last 25). `Ctrl+Shift+T` reopens.
 - [ ] Keyboard shortcuts: `Ctrl+T`, `Ctrl+W`, `Ctrl+Shift+T`, `Ctrl+Tab`/`Ctrl+Shift+Tab`, `Ctrl+1…8`, `Ctrl+9` (last), `Ctrl+L`/`Alt+D`/`F6` (focus address bar), `Alt+←/→`, `F5`/`Ctrl+R`, `Esc` (stop), `Ctrl+F`, `Ctrl+±/0` (zoom), `F11`, `Ctrl+P`. Shortcuts pressed while the WebView2 has focus arrive through the WPF control's key events / `AcceleratorKeyPressed`. **Verify which keys WebView2 consumes** (§10).
 - [ ] Find in page: use WebView2's Find API if available in the installed SDK (verify), else defer.
@@ -515,6 +519,7 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 - [ ] Download panel: a toolbar button with a progress ring badge, and a `Popup` flyout listing recent downloads (it renders above the WebView). "Show all" opens the Downloads page.
 - [ ] Downloads page: the full list, search, clear completed, per-item actions.
 - [ ] Actions: Open (`ShellExecute` via `Process.Start` with `UseShellExecute=true`), Show in folder (`explorer.exe /select,"path"` via `ArgumentList`), Copy link (redacted for signed URLs), Retry (browser: navigate to the original URL in a tab; app: restart the job), Cancel (deletes the partial file).
+- [ ] **Tab close with active browser downloads (spike F5):** closing a WebView freezes its downloads. Keep the owning WebView alive (detached and hidden) until its downloads finish, or ask the user before closing. Never infer progress from the target file's size.
 - [ ] On startup: mark previously in-progress browser downloads as `Interrupted`, offer resume for app jobs, and clean orphaned `.ajpart` files older than N days (ask first).
 - [ ] Settings: default folder, always-ask, max concurrent app downloads.
 - [ ] Dangerous file types: rely on WebView2 SmartScreen for browser downloads. App downloads only fetch media types.
@@ -536,7 +541,9 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 
 **Checklist**
 - [ ] `MediaSniffer` (Browser): subscribe to `WebResourceResponseReceived` per tab, extract metadata cheaply, and push to a `Channel<MediaObservation>`. Capture the `NavigationId` from `NavigationStarting`.
-- [ ] `MediaClassifier` (Core): content type first, extension as a fallback, segment exclusion rules (§6.2). Pure and tested.
+- [ ] `MediaClassifier` (Core): content type first, extension as a fallback, segment exclusion rules (§6.2). Pure and tested. Use the real content types from spike F1 as test cases (`audio/mpegurl` manifests, untyped or `octet-stream` TS segments, DASH `.m4v`/`.m4a` segments served as `video/mp4`/`audio/mp4`, byte-range `main.mp4` behind an fMP4 HLS playlist).
+- [ ] `Redactor.MediaUrl` (Core): also shortens long or opaque path segments, because CDNs put tokens in the path (spike F12). Use it for every media URL in logs and history.
+- [ ] Deduplicate live-manifest refreshes (the same manifest is fetched every few seconds; spike F1).
 - [ ] `MediaDetectionService` (Core): per-`(TabId, NavigationId)` store, dedupe, confirmation logic, events (throttled). Clear on new document, dispose on tab close.
 - [ ] `RequestContext` (Core/Security): captures the **allowlisted** request headers from the observed request (`Referer`, `Origin`, `User-Agent`, `Accept-Language`). Cookies are fetched **at download start** from the tab's profile `CookieManager.GetCookiesAsync(mediaUrl)` (cookies the browser would send to that exact URL). Never copy `Authorization` from another origin; never persist the context.
 - [ ] Optional hint script (`Scripts/video-hints.js`, injected with `AddScriptToExecuteOnDocumentCreatedAsync`): posts `{currentSrc, videoWidth, videoHeight, duration, isBlob}` for `<video>` elements on `loadedmetadata`. The host validates and treats it as untrusted.
@@ -719,18 +726,19 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 
 | # | Question | How | Status |
 |---|---|---|---|
-| V1 | Does `WebResourceResponseReceived` expose the content type, 206 ranges and the final URL after redirects? | Spike | ☐ |
-| V2 | Does `Response.GetContentAsync()` reliably return manifest bodies? | Spike | ☐ |
-| V3 | Do browser downloads continue when their WebView/tab closes? | Spike | ☐ |
-| V4 | Is `WebResourceRequested` with `"*"` + All source kinds fast enough on heavy sites (UI thread)? | Spike | ☐ |
-| V5 | Can an MV3 blocker (uBO Lite) run in WebView2 via `AddBrowserExtensionAsync`, and how well? | Spike | ☐ |
-| V6 | Does `NewWindowRequested` + `args.NewWindow` keep `window.opener` for OAuth popups? | Spike | ☐ |
+| V1 | Does `WebResourceResponseReceived` expose the content type, 206 ranges and the final URL after redirects? | Spike | ◐ Content type, length and range yes (F1). Redirects not yet observed. |
+| V2 | Does `Response.GetContentAsync()` reliably return manifest bodies? | Spike | ☑ Yes, all of them (F2) |
+| V3 | Do browser downloads continue when their WebView/tab closes? | Spike | ☑ **No**: the operation freezes and events stop (F5) |
+| V4 | Is `WebResourceRequested` with `"*"` + All source kinds fast enough on heavy sites (UI thread)? | Spike | ☑ Yes (F6) |
+| V5 | Can an MV3 blocker (uBO Lite) run in WebView2 via `AddBrowserExtensionAsync`, and how well? | Spike | ☐ Manual test pending (tooling ready) |
+| V6 | Does `NewWindowRequested` + `args.NewWindow` keep `window.opener` for OAuth popups? | Spike | ☑ Yes (F10) |
+| V13 | Does `CookieManager.GetCookiesAsync` return HttpOnly cookies for a signed-in site? | Spike | ☐ Manual test pending |
 | V7 | Which keys does WebView2 consume vs. forward to WPF (`Ctrl+L`, `Ctrl+T`, `Ctrl+W`, `F5`, …)? Should we set `AreBrowserAcceleratorKeysEnabled`? | Phase 2 | ☐ |
 | V8 | Is the WebView2 Find API available and stable in SDK 1.0.4370.26? | Phase 2 | ☐ |
 | V9 | How stable is the in-box WPF Fluent `ThemeMode` in .NET 10 for our controls? | Phase 0 | ◐ Builds and runs; visual check of Light/Dark/System pending |
 | V10 | Velopack's current status and fit (self-contained WPF, per-user install, updates) | Phase 10 | ☐ |
-| V11 | Is the ICoreWebView2_22 three-parameter filter available in the installed SDK and runtime? | Spike | ☐ (docs confirm the API exists) |
-| V12 | Exact WPF `EnsureCoreWebView2Async(environment, controllerOptions)` overload for private mode | Phase 1 | ☐ |
+| V11 | Is the ICoreWebView2_22 three-parameter filter available in the installed SDK and runtime? | Spike | ☑ Yes; ServiceWorker requests were intercepted (F7) |
+| V12 | Exact WPF `EnsureCoreWebView2Async(environment, controllerOptions)` overload for private mode | Phase 1 | ☑ Exists and works with `ProfileName` (F11) |
 
 **Verified from primary docs (2026-11-26):** `AddWebResourceRequestedFilter` with `CoreWebView2WebResourceRequestSourceKinds` (Document / SharedWorker / ServiceWorker; register worker kinds on only one WebView per environment); `AreBrowserExtensionsEnabled` + `AddBrowserExtensionAsync` (unpacked extension folder; extension UI entry points are missing in WebView2); WPF `ThemeMode` exists and is marked experimental (WPF0001). No maintained .NET binding for adblock-rust was found (its official bindings are Rust and JS, with community Python bindings).
 
@@ -738,11 +746,24 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 
 ## 11. Spike findings log
 
-_Fill in during Phase 0.5. Record the WebView2 runtime version for each finding._
+All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, Windows 11 (10.0.26200) x64. They come from the automated spike suite run by the agent (reports in `%LOCALAPPDATA%\AJBrowser\Diagnostics\Reports\`).
 
-| Date | Runtime version | Question | Finding |
+| # | Question | Finding | Consequence for the plan |
 |---|---|---|---|
-| | | | |
+| F1 | V1 media responses | Status, `Content-Type`, `Content-Length` and `Content-Range` are all visible. A `<video src=mp4>` produced a single `206` with `Content-Range: bytes 0-N/TOTAL`, so the total size is known. **Content types are unreliable:** the Mux HLS manifest came as `audio/mpegurl`, TS segments as `application/octet-stream` or with no type, and some Apple manifests had no `Content-Type`. **DASH segments arrive as `video/mp4` / `audio/mp4` with status 200** (42 in 25 s). **Apple's fMP4 HLS uses byte ranges into one `main.mp4`** (82 MB total via `Content-Range`), which looks exactly like a complete MP4. No 3xx responses were observed. CNN's homepage refreshed a **live** HLS manifest every ~4 s. | Phase 5: classify by content type **and** extension. Suppress anything referenced by a parsed manifest (including byte-range `main.mp4` files). Dedupe repeated live-manifest refreshes. Re-check redirects. |
+| F2 | V2 manifest bodies | `Response.GetContentAsync()` returned the body for 100% of manifests (HLS master and media playlists, DASH MPD, CNN live). | Phase 5/6 can parse manifests straight from the event; a re-fetch is only a fallback. |
+| F3 | Credential exposure | No `Cookie` or `Authorization` request headers appeared in `WebResourceResponseReceived` in the tests. **Inconclusive**: the test sites set no cookies. | Still assume headers may contain secrets: copy only allowlisted headers (plan §6.2). |
+| F4 | Playback / blob URLs | WebView2 reports `canPlayType(HLS) = "maybe"`. Native HLS played the Mux TS stream but **failed** on Apple's fMP4 sample (`MEDIA_ERR_SRC_NOT_SUPPORTED`). With hls.js/dash.js, `currentSrc` is a `blob:` URL (3840×2160 DASH, 1280×720 HLS). | Confirms §6.3: detection must rely on network responses. The page-hint script can still report `videoWidth/Height`. |
+| F5 | V3 downloads | `DownloadStarting` with `Handled = true` + custom `ResultFilePath` works. `Pause()` → `Interrupted / UserPaused`, `CanResume = true`; `Resume()` continues. While in progress the target file stays ~126 KB (data is written elsewhere until completion). **Closing the only WebView froze the operation**: `BytesReceived` stopped and no further events arrived. A navigation that turns into a download completes with `WebErrorStatus = ConnectionAborted`. | **Phase 4:** a tab with active downloads must keep its WebView alive (hidden) until they finish, or ask before closing. Never infer progress from file size. **Phase 1:** don't show an error page for the `ConnectionAborted` that accompanies a download. |
+| F6 | V4 interception cost | Observe-only handler p50 6–13 µs. With `Request.Uri` read and a host match, p50 25–68 µs, p99 ≤ 440 µs, one 4.9 ms outlier. UI-thread lag p95 (17–29 ms, mostly timer noise) **did not change** between modes. CNN: 346 requests intercepted, 40 blocked by the 15-domain test list. | In-process network blocking is viable. Reading COM properties dominates the cost, so read `Request.Uri` once and avoid allocations. Budget ≈ 350 requests × 50 µs ≈ 18 ms spread over a page load. |
+| F7 | V11 worker coverage | The three-argument filter works at runtime: `ServiceWorker` requests were intercepted on timesofindia (2–14 per load). | Use it in Phase 8, on one WebView per environment. |
+| F8 | Tracking prevention | Strict vs. Balanced responses: CNN 387 → 91, Times of India 71 → 24, Guardian 25 → 26 (consent wall). | A strong free baseline. Offer Strict as a setting (may break some sites); keep Balanced as the default. |
+| F9 | Benchmark caveats | Daily Mail aborted connections in every mode (bot protection or region), so it was excluded. Load times are noisy: heavy pages often never "complete" within 30 s because of streaming and ads. | Compare request counts rather than load times. |
+| F10 | V6 popups | With `args.NewWindow` assigned inside a deferral, `window.opener` worked both ways, and `window.close()` raised `WindowCloseRequested`. A script popup had `IsUserInitiated = false` and **WebView2 did not block it**. **Per-WebView setup is not inherited by new windows** (the popup failed with `HostNameNotResolved` until its own virtual-host mapping was added). | **Phase 2:** implement our own popup blocking for non-user-initiated popups. Put all per-WebView setup (handlers, scripts, filters, mappings) in one `BrowserTab` initialisation used for **every** WebView, including popups. |
+| F11 | V12 controller options | `EnsureCoreWebView2Async(environment, controllerOptions)` with `ProfileName` works for both the main WebView and popups. | Phase 1 can use named profiles and InPrivate as designed. |
+| F12 | Logging privacy | CNN's live HLS URLs carry long tokens **in the path** (`/live/use1/d17_Cixj…`), which `Redactor.Url` keeps (it strips only query and fragment). | Phase 5: add `Redactor.MediaUrl` that shortens long or opaque path segments, and use it for all media URLs in logs and history. |
+
+**Ad-block engine: summary so far.** Network interception performs well (F6, F7), so an engine running inside our app is viable (options C or D in §6.5). The extension route (option B) still needs the manual uBO Lite test (V5). Option C needs a Rust toolchain, which isn't installed yet.
 
 ---
 

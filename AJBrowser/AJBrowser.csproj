@@ -15,4 +15,14 @@
     <ProjectReference Include="..\AJBrowser.Core\AJBrowser.Core.csproj" />
   </ItemGroup>
 
+  <!-- Phase 0.5 feasibility spike: the Diagnostics window exists only in Debug builds. -->
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <Compile Remove="Diagnostics\**" />
+    <Page Remove="Diagnostics\**" />
+    <None Remove="Diagnostics\**" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <None Update="Diagnostics\TestPages\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

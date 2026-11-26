@@ -35,6 +35,23 @@ public partial class App : Application
             var window = new MainWindow(viewModel);
             MainWindow = window;
             window.Show();
+
+#if DEBUG
+            // Phase 0.5 spike: "--diagnostics" opens the Diagnostics window. "--diagnostics-auto" also runs the
+            // automated suite, writes a report and exits; "--diagnostics-auto=media,popup" runs only those tests.
+            var autoArg = e.Args.FirstOrDefault(a => a.StartsWith("--diagnostics-auto", StringComparison.Ordinal));
+            if (autoArg is not null)
+            {
+                var tests = autoArg.Contains('=')
+                    ? autoArg[(autoArg.IndexOf('=') + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    : [];
+                OpenDiagnostics(new HashSet<string>(tests, StringComparer.OrdinalIgnoreCase));
+            }
+            else if (e.Args.Contains("--diagnostics"))
+            {
+                OpenDiagnostics(null);
+            }
+#endif
         }
         catch (Exception ex)
         {
@@ -100,6 +117,19 @@ public partial class App : Application
             _isShowingErrorDialog = false;
         }
     }
+
+#if DEBUG
+    internal void OpenDiagnostics(IReadOnlySet<string>? autoTests = null)
+    {
+        if (_services is null)
+        {
+            return;
+        }
+
+        var window = new Diagnostics.DiagnosticsWindow(_services.Paths, _services.CreateLogger("Diagnostics"), autoTests);
+        window.Show();
+    }
+#endif
 
     private static string GetVersion() =>
         Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion

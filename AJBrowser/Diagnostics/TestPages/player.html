@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>AJBrowser spike player</title>
+    <style>
+        body { font-family: "Segoe UI", sans-serif; margin: 16px; background: #111; color: #eee; }
+        video { width: 100%; max-height: 70vh; background: #000; }
+        #info { margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+    <div id="info">Loading…</div>
+    <video id="v" controls muted autoplay playsinline></video>
+    <script>
+        // Plays ?type=mp4|hls|dash&src=URL and reports what the <video> element sees back to the host.
+        // Only the URL scheme of currentSrc is reported (blob vs https), never the full URL.
+        const params = new URLSearchParams(location.search);
+        const type = params.get('type');
+        const src = params.get('src');
+        const v = document.getElementById('v');
+        const info = document.getElementById('info');
+
+        function post(obj) {
+            try { window.chrome.webview.postMessage(JSON.stringify(obj)); } catch (e) { }
+        }
+
+        function report(stage) {
+            const s = v.currentSrc || '';
+            const scheme = s ? s.split(':')[0] : '';
+            post({
+                kind: 'player', stage, type, srcScheme: scheme,
+                width: v.videoWidth, height: v.videoHeight,
+                duration: isFinite(v.duration) ? Math.round(v.duration) : null,
+                error: v.error ? v.error.code : null
+            });
+            info.textContent = `${type}: ${v.videoWidth}x${v.videoHeight}, currentSrc scheme = ${scheme || '(none)'}`;
+        }
+
+        function loadScript(url) {
+            return new Promise((resolve, reject) => {
+                const el = document.createElement('script');
+                el.src = url;
+                el.onload = resolve;
+                el.onerror = () => reject(new Error('failed to load ' + url));
+                document.head.appendChild(el);
+            });
+        }
+
+        async function start() {
+            v.addEventListener('loadedmetadata', () => report('loadedmetadata'));
+            v.addEventListener('error', () => report('error'));
+            setTimeout(() => report('after10s'), 10000);
+
+            try {
+                if (type === 'mp4') {
+                    v.src = src;
+                } else if (type === 'hls') {
+                    // Like most real sites: use hls.js (MSE, blob: src) when available; &native=1 forces native playback.
+                    const native = v.canPlayType('application/vnd.apple.mpegurl');
+                    post({ kind: 'note', text: `canPlayType(HLS) = "${native}"` });
+                    await loadScript('https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js');
+                    if (params.get('native') === '1' || !Hls.isSupported()) {
+                        v.src = src;
+                    } else {
+                        const hls = new Hls();
+                        hls.loadSource(src);
+                        hls.attachMedia(v);
+                    }
+                } else if (type === 'dash') {
+                    await loadScript('https://cdn.jsdelivr.net/npm/dashjs@4/dist/dash.all.min.js');
+                    dashjs.MediaPlayer().create().initialize(v, src, true);
+                }
+                v.play().catch(e => post({ kind: 'note', text: 'play() rejected: ' + e.name }));
+            } catch (e) {
+                post({ kind: 'error', text: String(e) });
+                info.textContent = String(e);
+            }
+        }
+
+        start();
+    </script>
+</body>
+</html>
