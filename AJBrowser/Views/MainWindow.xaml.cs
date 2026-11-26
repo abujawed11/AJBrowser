@@ -27,6 +27,7 @@ public partial class MainWindow : Window
 
         _viewModel.FocusAddressBarRequested += OnFocusAddressBarRequested;
         _viewModel.CloseWindowRequested += OnCloseWindowRequested;
+        Closing += OnWindowClosing;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         Closed += (_, _) =>
         {
@@ -95,6 +96,10 @@ public partial class MainWindow : Window
                 switch (key)
                 {
                     case Key.D: FocusAddressBar(); return true;
+
+                    // Close the window ourselves: if the page had focus, WebView2 would otherwise turn Alt+F4 into a
+                    // page "close window" request, which OnWindowClosing refuses (see there).
+                    case Key.F4: Close(); return true;
                     case Key.Left: tab?.GoBackCommand.Execute(null); return true;
                     case Key.Right: tab?.GoForwardCommand.Execute(null); return true;
                     case Key.Home: tab?.HomeCommand.Execute(null); return true;
@@ -164,6 +169,28 @@ public partial class MainWindow : Window
     private void OnFocusAddressBarRequested(object? sender, EventArgs e) => FocusAddressBar();
 
     private void OnCloseWindowRequested(object? sender, EventArgs e) => Close();
+
+    /// <summary>
+    /// The WPF WebView2 control has a built-in reaction to a page calling window.close(): it closes the whole WPF
+    /// window it's in (WebView2Base.CoreWebView2_WindowCloseRequested → Window.Close). That suits one-window-per-popup
+    /// apps, but here every tab lives in this window, so a popup tab closing itself (sign-in popups, download links
+    /// opened in a new tab) would close the entire browser (plan §11 F17). There's no option to turn it off and its
+    /// handler runs before ours, so we refuse closes that come from it; BrowserTab still closes just that tab.
+    /// Every other close (✕, Alt+F4, taskbar, last tab, Windows shutting down) goes through normally.
+    /// </summary>
+    private void OnWindowClosing(object? sender, CancelEventArgs e)
+    {
+        // Only that specific handler. Alt+F4 inside a page would also arrive this way, so HandleShortcut closes the
+        // window itself on Alt+F4 before WebView2 sees the key.
+        var webViewAssembly = typeof(Microsoft.Web.WebView2.Wpf.WebView2).Assembly;
+        var frames = new System.Diagnostics.StackTrace(fNeedFileInfo: false).GetFrames();
+        if (frames.Any(f => f.GetMethod() is { } method
+                            && method.DeclaringType?.Assembly == webViewAssembly
+                            && method.Name.Contains("WindowCloseRequested", StringComparison.Ordinal)))
+        {
+            e.Cancel = true;
+        }
+    }
 
     // ---------------------------------------------------------------- fullscreen
 

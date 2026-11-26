@@ -533,7 +533,8 @@ public sealed class BrowserTab : IDisposable
         PopupRequested.Invoke(this, new PopupRequest(e, e.GetDeferral(), target));
     }
 
-    private void OnWindowCloseRequested(object? sender, object e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+    private void OnWindowCloseRequested(object? sender, object e) =>
+        _host.Dispatcher.BeginInvoke(() => CloseRequested?.Invoke(this, EventArgs.Empty));
 
     private void OnContextMenuRequested(object? sender, CoreWebView2ContextMenuRequestedEventArgs e)
     {
