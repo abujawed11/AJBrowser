@@ -12,6 +12,13 @@ public enum DownloadKind
     App,
 }
 
+/// <summary>What an app download fetches: one file, or the pieces of an HLS stream (Phase 6).</summary>
+public enum DownloadSource
+{
+    File,
+    Hls,
+}
+
 public enum DownloadState
 {
     Queued,
@@ -40,6 +47,9 @@ public sealed record DownloadItem
 {
     public long Id { get; init; }
     public DownloadKind Kind { get; init; }
+
+    /// <summary>App downloads: a single file, or an HLS stream (<see cref="SourceUrl"/> is then its media playlist).</summary>
+    public DownloadSource Source { get; init; }
     public DownloadState State { get; init; }
 
     /// <summary>The real address (needed for retry). Never log it: use <see cref="DisplayUrl"/>.</summary>

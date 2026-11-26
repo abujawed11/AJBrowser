@@ -2,10 +2,17 @@ using System.IO;
 using AJBrowser.Core.Downloads;
 using AJBrowser.Core.Logging;
 using AJBrowser.Core.Media;
+using AJBrowser.Core.Media.Hls;
 using AJBrowser.Core.Security;
 using AJBrowser.Core.Settings;
 
 namespace AJBrowser.Services;
+
+/// <summary>What happened when a video download was asked for: the queued item, or why not (shown in the picker).</summary>
+public sealed record MediaDownloadOutcome(DownloadItem? Item, string? Message)
+{
+    public static readonly MediaDownloadOutcome Cancelled = new(null, null);
+}
 
 /// <summary>
 /// Downloads a detected video with AJBrowser's own downloader (an "app download", plan §6.1): a file name from the
@@ -16,15 +23,17 @@ namespace AJBrowser.Services;
 public sealed class MediaDownloadService
 {
     private readonly DownloadManager _manager;
+    private readonly HlsDownloader _hls;
     private readonly FileNamer _namer;
     private readonly SettingsStore _settings;
     private readonly Func<string, string, string?> _askSavePath;
     private readonly AppLogger _log;
 
     /// <param name="askSavePath">The Save dialog (folder, suggested name) → chosen path or null; shared with browser downloads.</param>
-    public MediaDownloadService(DownloadManager manager, FileNamer namer, SettingsStore settings, Func<string, string, string?> askSavePath, AppLogger log)
+    public MediaDownloadService(DownloadManager manager, HlsDownloader hls, FileNamer namer, SettingsStore settings, Func<string, string, string?> askSavePath, AppLogger log)
     {
         _manager = manager;
+        _hls = hls;
         _namer = namer;
         _settings = settings;
         _askSavePath = askSavePath;
@@ -33,11 +42,16 @@ public sealed class MediaDownloadService
 
     /// <param name="cookieHeader">Asks the tab's profile for the cookies it would send to a URL (null when there are none).</param>
     /// <param name="saveAs">Ask where to save ("Save as…"); also asked when Settings → "Ask where to save" is on.</param>
-    public async Task<DownloadItem?> StartAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs = false)
+    public async Task<MediaDownloadOutcome> StartAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs = false)
     {
+        if (media.Kind == MediaKind.Hls)
+        {
+            return await StartHlsAsync(media, pageTitle, pageUrl, cookieHeader, saveAs);
+        }
+
         if (media.Kind != MediaKind.Direct)
         {
-            return null; // streams (HLS/DASH) come in Phases 6 and 7
+            return new MediaDownloadOutcome(null, "DASH streams arrive in a later version."); // Phase 7
         }
 
         var name = MediaFileNamer.Suggest(media, pageTitle);
@@ -53,17 +67,9 @@ public sealed class MediaDownloadService
             Directory.CreateDirectory(folder);
         }
 
-        if (saveAs || _settings.Current.AskWhereToSave)
+        if (!ChooseLocation(ref folder, ref name, saveAs))
         {
-            var chosen = _askSavePath(folder, name);
-            if (chosen is null)
-            {
-                return null; // cancelled in the dialog
-            }
-
-            // AJBrowser never overwrites a finished file (it writes .ajpart and renames): an existing name gets " (1)".
-            folder = Path.GetDirectoryName(chosen) ?? folder;
-            name = Path.GetFileName(chosen);
+            return MediaDownloadOutcome.Cancelled;
         }
 
         var path = _namer.ReservePath(folder, name);
@@ -74,14 +80,99 @@ public sealed class MediaDownloadService
             var context = media.Request ?? RequestContext.FromObservedRequest([], pageUrl);
             var item = await _manager.EnqueueAsync(new DownloadRequest(media.Url, path, context.ToHeaders(cookies)), pageUrl?.AbsoluteUri);
             _log.Info($"Video download queued: {media.DisplayUrl} → {Path.GetFileName(path)}{(cookies is null ? string.Empty : " (with cookies)")}");
-            return item;
+            return new MediaDownloadOutcome(item, null);
         }
         catch (Exception ex)
         {
             _namer.Release(path);
             _log.Error("Could not start a video download", ex);
-            return null;
+            return new MediaDownloadOutcome(null, "Couldn't start the download (details in the log).");
         }
+    }
+
+    /// <summary>
+    /// An HLS stream: read its playlist(s) with the page's headers and cookies, refuse DRM and live streams with a
+    /// clear message, pick the best quality (6c lets you choose), name the file after the result's real format
+    /// (.mp4, or .ts without FFmpeg) and queue the job; the download manager runs it with <see cref="HlsDownloader"/>.
+    /// </summary>
+    private async Task<MediaDownloadOutcome> StartHlsAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs)
+    {
+        var context = media.Request ?? RequestContext.FromObservedRequest([], pageUrl);
+        HlsPlan plan;
+        try
+        {
+            plan = await _hls.PrepareAsync(media.Url, context.ToHeaders(await cookieHeader(media.Url)));
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Reading a stream's playlist failed: {ex.GetType().Name}");
+            return new MediaDownloadOutcome(null, "The stream's playlist couldn't be read.");
+        }
+
+        if (!plan.CanDownload)
+        {
+            return new MediaDownloadOutcome(null, plan.Problem ?? "This stream can't be downloaded.");
+        }
+
+        var named = media with { Height = plan.Variant?.Height ?? media.Height, IsAudioOnly = false };
+        var name = Path.ChangeExtension(MediaFileNamer.Suggest(named, pageTitle), plan.OutputExtension);
+        var folder = DownloadFolder();
+        if (!ChooseLocation(ref folder, ref name, saveAs))
+        {
+            return MediaDownloadOutcome.Cancelled;
+        }
+
+        var path = _namer.ReservePath(folder, name);
+        try
+        {
+            // Cookies for the media playlist's own host; the downloader sends them only to that host.
+            var cookies = await cookieHeader(plan.MediaPlaylistUrl!);
+            var item = await _manager.EnqueueAsync(new DownloadRequest(plan.MediaPlaylistUrl!, path, context.ToHeaders(cookies), DownloadSource.Hls), pageUrl?.AbsoluteUri);
+            _log.Info($"Stream download queued: {Redactor.MediaUrl(plan.MediaPlaylistUrl)} ({plan.Media!.Segments.Count} pieces) → {Path.GetFileName(path)}");
+            var note = plan.HasSeparateAudio ? "Note: this stream's sound is a separate track; this version saves the picture track only." : null;
+            return new MediaDownloadOutcome(item, note);
+        }
+        catch (Exception ex)
+        {
+            _namer.Release(path);
+            _log.Error("Could not start a stream download", ex);
+            return new MediaDownloadOutcome(null, "Couldn't start the download (details in the log).");
+        }
+    }
+
+    private string DownloadFolder()
+    {
+        var folder = _settings.Current.DownloadFolder ?? KnownFolders.Downloads;
+        try
+        {
+            Directory.CreateDirectory(folder);
+            return folder;
+        }
+        catch (Exception)
+        {
+            Directory.CreateDirectory(KnownFolders.Downloads);
+            return KnownFolders.Downloads;
+        }
+    }
+
+    /// <summary>"Save as…" or Settings → "Ask where to save": the dialog decides. False when it was cancelled.</summary>
+    private bool ChooseLocation(ref string folder, ref string name, bool saveAs)
+    {
+        if (!saveAs && !_settings.Current.AskWhereToSave)
+        {
+            return true;
+        }
+
+        var chosen = _askSavePath(folder, name);
+        if (chosen is null)
+        {
+            return false;
+        }
+
+        // AJBrowser never overwrites a finished file (it writes .ajpart and renames): an existing name gets " (1)".
+        folder = Path.GetDirectoryName(chosen) ?? folder;
+        name = Path.GetFileName(chosen);
+        return true;
     }
 
     /// <summary>

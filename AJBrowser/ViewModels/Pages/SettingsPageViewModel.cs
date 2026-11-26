@@ -103,6 +103,20 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
         set => _settings.Update(s => s with { AskWhereToSave = value });
     }
 
+    /// <summary>"Found: C:\…\ffmpeg.exe" or what happens without it.</summary>
+    public string FfmpegStatus => Core.Media.Ffmpeg.FfmpegLocator.Find(_settings.Current.FfmpegPath) is { } found
+        ? $"Found: {found}" + (_settings.Current.FfmpegPath is null ? " (on the PATH)" : string.Empty)
+        : _settings.Current.FfmpegPath is null
+            ? "Not set. Streams in TS format are saved as .ts (VLC and most players open them); with FFmpeg they become .mp4."
+            : "Not found at the chosen place. Streams in TS format are saved as .ts until it's fixed.";
+
+    public bool HasFfmpegPath => _settings.Current.FfmpegPath is not null;
+
+    public void SetFfmpegPath(string path) => _settings.Update(s => s with { FfmpegPath = path });
+
+    [RelayCommand]
+    private void ClearFfmpegPath() => _settings.Update(s => s with { FfmpegPath = null });
+
     /// <summary>Look for videos on pages (the toolbar's film button). Switching off also clears what was found.</summary>
     public bool DetectVideos
     {
@@ -228,7 +242,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
                      {
                          nameof(IsThemeSystem), nameof(IsThemeLight), nameof(IsThemeDark), nameof(ShowBookmarksBar),
                          nameof(IsStartupHomePage), nameof(IsStartupRestore), nameof(DownloadFolderText),
-                         nameof(HasCustomDownloadFolder), nameof(AskWhereToSave), nameof(MaxConcurrentDownloads), nameof(DetectVideos),
+                         nameof(HasCustomDownloadFolder), nameof(AskWhereToSave), nameof(MaxConcurrentDownloads), nameof(DetectVideos), nameof(FfmpegStatus), nameof(HasFfmpegPath),
                      })
             {
                 OnPropertyChanged(name);

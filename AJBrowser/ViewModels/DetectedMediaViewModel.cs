@@ -30,10 +30,20 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
 
     public bool IsStream => Media.Kind is MediaKind.Hls or MediaKind.Dash;
 
-    public bool CanDownload => Media.Kind == MediaKind.Direct && !IsStarting;
+    /// <summary>Files and HLS streams (Phase 6); DASH comes in Phase 7.</summary>
+    public bool CanDownload => Media.Kind is MediaKind.Direct or MediaKind.Hls && !IsStarting;
+
+    /// <summary>DASH: listed, not downloadable yet.</summary>
+    public bool IsComingSoon => Media.Kind == MediaKind.Dash;
 
     /// <summary>The file's name: the server's, the one in the address, or the page title (see MediaFileNamer).</summary>
-    public string Title => IsStream ? $"Stream ({Media.Container})" : _name(Media);
+    public string Title => Media.Kind switch
+    {
+        MediaKind.Dash => "Stream (DASH)",
+        // A stream's file type (.mp4 or .ts) is only known once its playlist is read, so no extension here.
+        MediaKind.Hls => System.IO.Path.GetFileNameWithoutExtension(_name(Media)),
+        _ => _name(Media),
+    };
 
     /// <summary>"1280×720 · MP4", "Audio · M4A", "Unknown quality · WebM".</summary>
     public string Quality
@@ -50,9 +60,14 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
     {
         get
         {
-            if (IsStream)
+            if (Media.Kind == MediaKind.Hls)
             {
-                return $"Stream downloads arrive in a later version · {Media.Host}";
+                return $"Stream (HLS) · best quality · {Media.Host}";
+            }
+
+            if (IsComingSoon)
+            {
+                return $"DASH downloads arrive in a later version · {Media.Host}";
             }
 
             var parts = new List<string> { Quality, Media.TotalBytes is { } bytes ? DownloadText.Size(bytes) : "Unknown size" };
@@ -76,6 +91,10 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
     /// <summary>Shows "Added to downloads" after a click, so it's clear it worked.</summary>
     [ObservableProperty]
     public partial bool WasQueued { get; set; }
+
+    /// <summary>Why it couldn't be downloaded (DRM, live, unreadable playlist) or a note about the result; empty if none.</summary>
+    [ObservableProperty]
+    public partial string Message { get; set; } = string.Empty;
 
     public void Update(DetectedMedia media)
     {

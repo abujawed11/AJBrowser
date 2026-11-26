@@ -52,6 +52,12 @@ public sealed record AppSettings
     /// <summary>Ask where to save each download (Phase 4).</summary>
     public bool AskWhereToSave { get; init; }
 
+    /// <summary>
+    /// Optional ffmpeg.exe (a file or its folder) for turning TS streams into MP4 (Phase 6). Null: look on the PATH;
+    /// without FFmpeg, TS streams are saved as .ts.
+    /// </summary>
+    public string? FfmpegPath { get; init; }
+
     /// <summary>Look for videos on pages and offer them in the toolbar (Phase 5). On by default.</summary>
     public bool DetectVideos { get; init; } = true;
 
@@ -131,6 +137,11 @@ public sealed record AppSettings
         if (MaxConcurrentDownloads is < MinConcurrentDownloads or > MaxConcurrentDownloadsLimit)
         {
             result = result with { MaxConcurrentDownloads = Math.Clamp(MaxConcurrentDownloads, MinConcurrentDownloads, MaxConcurrentDownloadsLimit) };
+        }
+
+        if (string.IsNullOrWhiteSpace(FfmpegPath))
+        {
+            result = result with { FfmpegPath = null };
         }
 
         if (string.IsNullOrWhiteSpace(DownloadFolder))

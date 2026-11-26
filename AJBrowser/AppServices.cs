@@ -45,10 +45,15 @@ public sealed class AppServices : IDisposable
 
         // Downloads (Phase 4). Created on the UI thread, so the manager raises its events there.
         var namer = _namer = new FileNamer();
+        Hls = new Core.Media.Hls.HlsDownloader(
+            new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(60) }, // per piece; pieces are small
+            Path.Combine(paths.Temp, "hls"),
+            () => Core.Media.Ffmpeg.FfmpegLocator.Find(Settings.Current.FfmpegPath));
         DownloadManager = new DownloadManager(
             new DownloadRepository(database),
             new HttpFileDownloader(new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
-            namer);
+            namer,
+            streams: Hls);
         var downloadLog = CreateLogger(nameof(DownloadManager));
         DownloadManager.MaxConcurrent = settings.Current.MaxConcurrentDownloads;
         DownloadManager.PersistenceFailed += (_, ex) => downloadLog.Warn("Saving a download's state failed", ex);
@@ -56,7 +61,7 @@ public sealed class AppServices : IDisposable
             DownloadManager, namer, settings, AskSavePath, () => KnownFolders.Downloads, CreateLogger(nameof(DownloadInterceptor)));
         Downloads = new DownloadsViewModel(DownloadManager, DownloadInterceptor, shell, settings, CreateLogger(nameof(DownloadsViewModel)));
 
-        MediaDownloads = new MediaDownloadService(DownloadManager, _namer, settings, AskSavePath, CreateLogger(nameof(MediaDownloadService)));
+        MediaDownloads = new MediaDownloadService(DownloadManager, Hls, _namer, settings, AskSavePath, CreateLogger(nameof(MediaDownloadService)));
 
         _tabServices = new TabServices(
             AddressResolver,
@@ -94,6 +99,9 @@ public sealed class AppServices : IDisposable
     /// <summary>Site icons for History, Bookmarks, the bookmarks bar and suggestions.</summary>
     public FaviconService Favicons { get; }
     public SessionService Session { get; }
+
+    /// <summary>Downloads HLS streams for the download manager (Phase 6).</summary>
+    public Core.Media.Hls.HlsDownloader Hls { get; }
 
     /// <summary>Owns every download and its database rows.</summary>
     public DownloadManager DownloadManager { get; }

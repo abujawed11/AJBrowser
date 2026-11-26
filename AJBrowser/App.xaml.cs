@@ -123,6 +123,43 @@ public partial class App : Application
         }
 
         await OfferPartialFileCleanupAsync(services);
+        RemoveStaleStreamTemp(services);
+    }
+
+    /// <summary>
+    /// Temporary pieces of stream downloads (Temp\hls\{id}) are AJBrowser's own files: keep those of stream jobs that
+    /// can still continue, delete the rest (finished, cancelled or removed from the list) without asking.
+    /// </summary>
+    private void RemoveStaleStreamTemp(AppServices services)
+    {
+        try
+        {
+            var root = System.IO.Path.Combine(services.Paths.Temp, "hls");
+            if (!System.IO.Directory.Exists(root))
+            {
+                return;
+            }
+
+            var keep = services.DownloadManager.Items
+                .Where(i => i.Source == Core.Downloads.DownloadSource.Hls && i.State is not (Core.Downloads.DownloadState.Completed or Core.Downloads.DownloadState.Cancelled))
+                .Select(i => i.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .ToHashSet();
+            foreach (var folder in System.IO.Directory.GetDirectories(root))
+            {
+                if (!keep.Contains(System.IO.Path.GetFileName(folder)))
+                {
+                    services.Hls.DeleteTemp(long.TryParse(System.IO.Path.GetFileName(folder), out var id) ? id : -1);
+                    if (System.IO.Directory.Exists(folder))
+                    {
+                        System.IO.Directory.Delete(folder, recursive: true);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log?.Debug($"Stream temp cleanup skipped: {ex.GetType().Name}");
+        }
     }
 
     /// <summary>

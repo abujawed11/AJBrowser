@@ -794,8 +794,9 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         row.IsStarting = true;
         try
         {
-            var item = await _services.MediaDownloads.StartAsync(row.Media, Title, PageUri, _browser.GetCookieHeaderAsync, saveAs);
-            row.WasQueued = item is not null || row.WasQueued;
+            var outcome = await _services.MediaDownloads.StartAsync(row.Media, Title, PageUri, _browser.GetCookieHeaderAsync, saveAs);
+            row.WasQueued = outcome.Item is not null || row.WasQueued;
+            row.Message = outcome.Message ?? string.Empty;
         }
         finally
         {

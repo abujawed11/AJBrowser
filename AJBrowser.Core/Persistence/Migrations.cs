@@ -76,6 +76,11 @@ public static class Migrations
         );
         CREATE INDEX ix_downloads_started_at ON downloads (started_at DESC);
         """,
+
+        // ---- v4 (Phase 6): an app download can be an HLS stream (its source_url is then the media playlist).
+        """
+        ALTER TABLE downloads ADD COLUMN source_type TEXT NOT NULL DEFAULT 'File';  -- DownloadSource name
+        """,
     ];
 
     /// <summary>The schema version this build of AJBrowser expects.</summary>

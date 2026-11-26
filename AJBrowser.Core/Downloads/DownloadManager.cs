@@ -24,6 +24,7 @@ public sealed class DownloadManager
 
     private readonly DownloadRepository _repository;
     private readonly HttpFileDownloader _downloader;
+    private readonly IStreamDownloader? _streams;
     private readonly FileNamer _namer;
     private readonly Func<DateTime> _utcNow;
     private readonly SynchronizationContext? _context;
@@ -34,10 +35,12 @@ public sealed class DownloadManager
     private int _maxConcurrent = DefaultMaxConcurrent;
     private bool _shuttingDown;
 
-    public DownloadManager(DownloadRepository repository, HttpFileDownloader downloader, FileNamer namer, Func<DateTime>? utcNow = null)
+    /// <param name="streams">Runs HLS jobs (Phase 6); without it they fail with a clear message.</param>
+    public DownloadManager(DownloadRepository repository, HttpFileDownloader downloader, FileNamer namer, Func<DateTime>? utcNow = null, IStreamDownloader? streams = null)
     {
         _repository = repository;
         _downloader = downloader;
+        _streams = streams;
         _namer = namer;
         _utcNow = utcNow ?? (() => DateTime.UtcNow);
         _context = SynchronizationContext.Current;
@@ -109,6 +112,7 @@ public sealed class DownloadManager
         var item = await _repository.AddAsync(new DownloadItem
         {
             Kind = DownloadKind.App,
+            Source = request.Source,
             State = DownloadState.Queued,
             SourceUrl = request.Url.AbsoluteUri,
             PageUrl = pageUrl,
@@ -219,7 +223,7 @@ public sealed class DownloadManager
                 return;
             }
 
-            HttpFileDownloader.DeletePartial(entry.Item.FilePath);
+            DeletePartialLocked(entry.Item);
             _namer.Release(entry.Item.FilePath);
             SetLocked(entry, entry.Item with { State = DownloadState.Cancelled, ReceivedBytes = 0, BytesPerSecond = null, Remaining = null });
         }
@@ -451,7 +455,13 @@ public sealed class DownloadManager
         DownloadResult result;
         try
         {
-            result = await _downloader.DownloadAsync(new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers), start.Resume, progress, token).ConfigureAwait(false);
+            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source);
+            result = start.Source switch
+            {
+                DownloadSource.File => await _downloader.DownloadAsync(request, start.Resume, progress, token).ConfigureAwait(false),
+                _ when _streams is not null => await _streams.DownloadAsync(start.Id, request, progress, token).ConfigureAwait(false),
+                _ => new DownloadResult(DownloadOutcome.Failed, 0, null, null, "Stream downloads aren't available in this version."),
+            };
         }
         catch (Exception ex)
         {
@@ -471,11 +481,18 @@ public sealed class DownloadManager
             {
                 case DownloadOutcome.Completed:
                     _namer.Release(item.FilePath);
-                    SetLocked(entry, item with { State = DownloadState.Completed, ReceivedBytes = result.ReceivedBytes, CompletedAtUtc = _utcNow() });
+                    SetLocked(entry, item with
+                    {
+                        State = DownloadState.Completed,
+                        ReceivedBytes = result.ReceivedBytes,
+                        TotalBytes = item.Source == DownloadSource.File ? item.TotalBytes : result.ReceivedBytes, // streams: real size, not the estimate
+                        FilePath = result.FinalPath ?? item.FilePath,
+                        CompletedAtUtc = _utcNow(),
+                    });
                     break;
 
                 case DownloadOutcome.Cancelled when reason == StopReason.Cancel:
-                    HttpFileDownloader.DeletePartial(item.FilePath);
+                    DeletePartialLocked(item);
                     _namer.Release(item.FilePath);
                     SetLocked(entry, item with { State = DownloadState.Cancelled, ReceivedBytes = 0 });
                     break;
@@ -510,6 +527,16 @@ public sealed class DownloadManager
                 BytesPerSecond = entry.Rate.BytesPerSecond,
                 Remaining = entry.Rate.Remaining(total),
             }, now);
+        }
+    }
+
+    /// <summary>Cancel: removes a file download's .ajpart, or a stream's temporary pieces.</summary>
+    private void DeletePartialLocked(DownloadItem item)
+    {
+        HttpFileDownloader.DeletePartial(item.FilePath);
+        if (item.Source != DownloadSource.File)
+        {
+            _streams?.DeleteTemp(item.Id);
         }
     }
 

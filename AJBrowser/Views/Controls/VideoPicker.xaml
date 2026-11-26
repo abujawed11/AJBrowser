@@ -33,7 +33,7 @@
                                             AutomationProperties.Name="Download video" />
                                     <TextBlock Text="Soon" VerticalAlignment="Center" HorizontalAlignment="Center"
                                                Style="{StaticResource SecondaryTextStyle}"
-                                               Visibility="{Binding IsStream, Converter={StaticResource PageBoolToVisibility}}" />
+                                               Visibility="{Binding IsComingSoon, Converter={StaticResource PageBoolToVisibility}}" />
                                 </Grid>
 
                                 <TextBlock DockPanel.Dock="Left" FontFamily="{StaticResource IconFontFamily}" FontSize="20"
@@ -58,6 +58,8 @@
                                     <TextBlock Text="Added to downloads" FontSize="{StaticResource CaptionFontSize}"
                                                Foreground="{DynamicResource SuccessBrush}"
                                                Visibility="{Binding WasQueued, Converter={StaticResource PageBoolToVisibility}}" />
+                                    <TextBlock Text="{Binding Message}" FontSize="{StaticResource CaptionFontSize}" TextWrapping="Wrap"
+                                               Style="{StaticResource ErrorTextStyle}" Margin="0" />
                                 </StackPanel>
                             </DockPanel>
                         </Border>

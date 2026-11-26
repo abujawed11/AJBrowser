@@ -17,12 +17,24 @@ public enum DownloadOutcome
 }
 
 /// <summary>What to download and where. <see cref="Headers"/> are extra request headers (for example Referer, cookies in Phase 5).</summary>
-public sealed record DownloadRequest(Uri Url, string TargetPath, IReadOnlyDictionary<string, string>? Headers = null);
+public sealed record DownloadRequest(Uri Url, string TargetPath, IReadOnlyDictionary<string, string>? Headers = null, DownloadSource Source = DownloadSource.File);
 
 public sealed record DownloadProgress(long ReceivedBytes, long? TotalBytes);
 
 /// <summary>The result of <see cref="HttpFileDownloader.DownloadAsync"/>. <see cref="Error"/> never contains the URL.</summary>
-public sealed record DownloadResult(DownloadOutcome Outcome, long ReceivedBytes, long? TotalBytes, ResumeInfo? Resume, string? Error = null);
+/// <remarks><see cref="FinalPath"/>: set when the file ended up under a different name (an HLS stream saved as .ts when it couldn't become .mp4).</remarks>
+public sealed record DownloadResult(DownloadOutcome Outcome, long ReceivedBytes, long? TotalBytes, ResumeInfo? Resume, string? Error = null, string? FinalPath = null);
+
+/// <summary>
+/// Downloads app jobs that aren't a single file (HLS streams, Phase 6; DASH later). Pausing keeps its temporary pieces,
+/// so the next run continues; <see cref="DeleteTemp"/> throws them away (cancel).
+/// </summary>
+public interface IStreamDownloader
+{
+    Task<DownloadResult> DownloadAsync(long jobId, DownloadRequest request, IProgress<DownloadProgress>? progress, CancellationToken cancellationToken);
+
+    void DeleteTemp(long jobId);
+}
 
 /// <summary>
 /// Downloads one file over HTTP for app-managed jobs (no UI, unit-tested with a fake handler).
