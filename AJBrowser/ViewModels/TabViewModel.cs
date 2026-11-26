@@ -54,6 +54,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.OpenInNewTabRequested += OnBrowserOpenInNewTabRequested;
         _browser.CloseRequested += OnBrowserCloseRequested;
         _services.Bookmarks.Changed += OnBookmarksChanged;
+        _services.Favicons.Changed += OnFaviconsChanged;
     }
 
     /// <summary>A link wants a new tab (handled by <see cref="MainWindowViewModel"/>).</summary>
@@ -636,7 +637,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         Title = !string.IsNullOrWhiteSpace(_browser.Title)
             ? _browser.Title
             : _browser.Url is { Length: > 0 } url ? UrlDisplay.ForAddressBar(url) : NewTabTitle;
-        Favicon = _browser.Favicon;
+        Favicon = BestFavicon();
         CanGoBack = _browser.CanGoBack;
         CanGoForward = _browser.CanGoForward;
         IsLoading = _browser.IsLoading;
@@ -671,8 +672,24 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
     }
 
     /// <summary>Remember the site's icon so History, Bookmarks and suggestions can show it.</summary>
-    private void OnBrowserFaviconLoaded(object? sender, (string? PageUrl, byte[] Png) icon) =>
-        _services.Favicons.Remember(icon.PageUrl, icon.Png);
+    private void OnBrowserFaviconLoaded(object? sender, FaviconInfo icon) =>
+        _services.Favicons.Remember(icon.PageUrl, icon.Png, icon.IconUrl, icon.UserAgent);
+
+    /// <summary>
+    /// The tab's icon: the site's best known icon (often a sharper 32 px one fetched by FaviconService) once the page
+    /// has an icon at all, otherwise WebView2's own 16 px one. Null while the page has none (the tab shows a globe).
+    /// </summary>
+    private ImageSource? BestFavicon() =>
+        _browser.Favicon is null ? null : _services.Favicons.Get(_browser.Url) ?? _browser.Favicon;
+
+    /// <summary>A sharper icon may have arrived for this tab's site.</summary>
+    private void OnFaviconsChanged(object? sender, EventArgs e)
+    {
+        if (!IsInternal)
+        {
+            Favicon = BestFavicon();
+        }
+    }
 
     private void OnBrowserNavigationStarted(object? sender, EventArgs e)
     {
@@ -744,6 +761,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.OpenInNewTabRequested -= OnBrowserOpenInNewTabRequested;
         _browser.CloseRequested -= OnBrowserCloseRequested;
         _services.Bookmarks.Changed -= OnBookmarksChanged;
+        _services.Favicons.Changed -= OnFaviconsChanged;
         Suggestions.Dispose();
         InternalPageContent?.Dispose();
         _browser.Dispose();

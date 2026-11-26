@@ -89,8 +89,11 @@ public sealed class BrowserTab : IDisposable
     /// </summary>
     public event EventHandler<string>? PageLoaded;
 
-    /// <summary>The page's icon arrived: the page URL it belongs to and the icon as PNG (to remember it for lists).</summary>
-    public event EventHandler<(string? PageUrl, byte[] Png)>? FaviconLoaded;
+    /// <summary>
+    /// The page's icon arrived: the page URL it belongs to, the icon as PNG (WebView2 gives 16 px), the icon file's
+    /// own address and the browser's user agent (so a sharper version can be fetched for lists and tabs).
+    /// </summary>
+    public event EventHandler<FaviconInfo>? FaviconLoaded;
 
     /// <summary>Something the user must see instead of the page (error, crash, engine failure).</summary>
     public event EventHandler<PageProblem>? ProblemOccurred;
@@ -452,19 +455,23 @@ public sealed class BrowserTab : IDisposable
         ImageSource? icon = null;
         byte[]? png = null;
         string? pageUrl = null;
+        string? iconUrl = null;
+        string? userAgent = null;
 
         try
         {
             if (!string.IsNullOrEmpty(core.FaviconUri))
             {
                 pageUrl = core.Source;
+                iconUrl = core.FaviconUri;
+                userAgent = core.Settings.UserAgent;
                 using var stream = await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
                 if (stream is not null)
                 {
                     using var buffer = new MemoryStream();
                     await stream.CopyToAsync(buffer);
                     png = buffer.ToArray();
-                    icon = FaviconService.Decode(png);
+                    icon = FaviconImages.Decode(png);
                 }
             }
         }
@@ -484,7 +491,7 @@ public sealed class BrowserTab : IDisposable
 
         if (png is not null && icon is not null)
         {
-            FaviconLoaded?.Invoke(this, (pageUrl, png));
+            FaviconLoaded?.Invoke(this, new FaviconInfo(pageUrl, png, iconUrl, userAgent));
         }
     }
 
@@ -635,3 +642,6 @@ public sealed class BrowserTab : IDisposable
         };
 
 }
+
+/// <summary>A page's icon as WebView2 delivered it, plus what's needed to fetch a sharper one.</summary>
+public sealed record FaviconInfo(string? PageUrl, byte[] Png, string? IconUrl, string? UserAgent);

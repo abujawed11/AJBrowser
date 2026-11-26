@@ -71,7 +71,8 @@
 
                         <!-- Icon: spinner while loading, otherwise the favicon, otherwise a globe. -->
                         <Grid Width="16" Height="16" VerticalAlignment="Center">
-                            <Image Source="{Binding Favicon}" RenderOptions.BitmapScalingMode="HighQuality">
+                            <Image Source="{Binding Favicon}" RenderOptions.BitmapScalingMode="HighQuality"
+                                   UseLayoutRounding="True" SnapsToDevicePixels="True">
                                 <Image.Style>
                                     <Style TargetType="Image">
                                         <Style.Triggers>

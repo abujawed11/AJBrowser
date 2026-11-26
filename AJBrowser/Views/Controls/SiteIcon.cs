@@ -30,6 +30,10 @@ public sealed class SiteIcon : Grid
         Width = 16;
         Height = 16;
         VerticalAlignment = VerticalAlignment.Center;
+
+        // Place the icon on whole screen pixels: at 125%/150% scaling a half-pixel offset makes it look smeared.
+        UseLayoutRounding = true;
+        SnapsToDevicePixels = true;
         RenderOptions.SetBitmapScalingMode(_image, BitmapScalingMode.HighQuality);
         _glyph.SetResourceReference(TextBlock.FontFamilyProperty, "IconFontFamily");
         _glyph.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
