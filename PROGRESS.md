@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 7.5a done · next 7.5b**
+**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 7.5a + 7.5b done · next 7.5c**
 
 ---
 
@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **721 passing tests**.
+   - Test Explorer: expect **736 passing tests**.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -87,6 +87,8 @@ AJBrowser/                   WPF app (net10.0-windows)
   Services/ShellService.cs   open folder, open file, show file in folder (SHOpenFolderAndSelectItems), open URL, Notepad
   Services/KnownFolders.cs   the Windows Downloads folder (also when moved)
   Services/MediaDownloadService.cs (5b) detected video → app download (name, folder, allowlisted headers + cookies)
+  Services/ToolService.cs    (7.5b) which yt-dlp/FFmpeg/Deno to use, install/update, status lines, daily yt-dlp update
+  ViewModels/Pages/ToolRowViewModel.cs (7.5b) one tool row in Settings → Downloads
   Services/HistoryService.cs record visits/titles (queued background writes), search, delete, clear range
   Services/BookmarkService.cs all bookmarks in memory + write-through to SQLite, folder choices, Changed event
   Services/SessionService.cs debounced (1 s) session saves + final synchronous save at exit
@@ -138,13 +140,14 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
                              via the shared HLS piece engine; whole files in 8 MB ranges)
   Media/StreamDownloaders.cs (7b) routes HLS / DASH jobs for the DownloadManager
   Media/YtDlp/               (7.5a) YtDlpInfo (+parser of -J JSON), YtDlpFormats (quality rows, sound choice), YtDlpArguments,
-                             YtDlpProgress (tracker), YtDlpErrors (plain sentences + fix), NetscapeCookieFile, YtDlpCookieScope
+                             YtDlpProgress (tracker), YtDlpErrors (plain sentences + fix), NetscapeCookieFile, YtDlpCookieScope;
+                             (7.5b) YtDlpDownloader (inspect + download jobs, cookies per run, pause/resume/cancel)
   Tools/                     (7.5a) ToolCatalog (yt-dlp, FFmpeg LGPL, Deno), GitHubRelease + Checksums, ToolInstaller (find,
-                             verified install/update, daily check), ProcessRunner
+                             verified install/update, daily check), ProcessRunner, ChildProcessJob (tools end with AJBrowser)
   Media/Ffmpeg/              (6b) FfmpegLocator (Settings path or PATH), FfmpegRunner (local files only), progress parser
   Security/RequestContext.cs (5a) allowlisted headers for app downloads; cookies only added at download time
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (721 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (736 tests)
 ```
 
 **Packages:**
@@ -166,7 +169,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 5 Video detection | 🔶 Built | **5a** Core detection logic. **5b** checked by the agent in the real app (real &lt;video&gt; found and downloaded byte-identical with Referer + cookie; size rule; HLS = one entry; clears on a new page); real file names after your report. **5c** right-click "Download video", Settings switch, Save as…, expired-link message + fresh link on Retry, V14 decided. 488 tests. **Pending:** the agent's real-app check of 5c (needs AJBrowser closed), and your quick try. |
 | 6 HLS streams | 🔶 Built | **6a** Core HLS logic; **6b** download engine (checked on a local stream); **6c** quality list with size estimates, one row per video, separate sound merged when FFmpeg is set. **Agent check with real public streams:** Apple's sample listed its 24 qualities; Mux's "Big Buck Bunny" downloaded at 184p into a valid H.264/AAC `.ts`. 555 tests. **You:** try a site; with FFmpeg set, check that sound gets merged (not tested by the agent, no FFmpeg here). |
 | 7 DASH | 🔶 In progress | **7a** Core: manifest parsing (all four ways DASH lists pieces), DRM/live/multi-period refusal, audio-track choice, container, labels. **7b** download engine (shared with HLS; DB migration v6); agent check on real public streams: 5 manifests read correctly, Big Buck Bunny 180p and a VP9 whole-file track downloaded into valid MP4/WebM files. Also fixed: a deleted FFmpeg made stream downloads fail instead of saving the picture. **7c** picker: quality list + sound-track list for DASH rows, merge note. **Agent check in the real app with your FFmpeg 9.1:** a public DASH stream listed 10 qualities and 10 sound tracks; VP9 + automatic sound → WebM with English Opus, H.264 + automatic → MP4 with English AAC, H.264 + German chosen → MP4 with German sound (all checked with ffprobe). 644 tests. **You:** try a site with a DASH player. |
-| 7.5 yt-dlp | 🔶 In progress | **7.5a** Core: installer for yt-dlp/Deno/FFmpeg (checksum-verified, updates), yt-dlp info → quality rows, arguments, progress, error messages, cookie file. **Agent check against the real tools:** yt-dlp and Deno installed by the new code; a public YouTube video listed 2160p…144p; 144p downloaded with picture + sound merged by your FFmpeg; Deno confirmed necessary (fewer formats without it). 721 tests. Nothing visible in the app yet. **Next: 7.5b** (download engine + Settings), then **7.5c** (picker). |
+| 7.5 yt-dlp | 🔶 In progress | **7.5a** Core: installer for yt-dlp/Deno/FFmpeg (checksum-verified, updates), yt-dlp info → quality rows, arguments, progress, error messages, cookie file; checked against the real tools and a public YouTube video. **7.5b** download engine (pause/resume/cancel, cookies from the browser per run, tools end with AJBrowser) + **Settings → Downloads**: "Big video sites (yt-dlp)" switch with notice, auto-update, Install/Update/Choose for yt-dlp, Deno and FFmpeg. **Agent check in the real app:** switch + notice, and Install yt-dlp from the real release (then removed again). 736 tests. **You:** try the Settings section (below). **Next: 7.5c** (the picker on YouTube, Facebook, Instagram…). |
 | 8–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
@@ -186,15 +189,22 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: Phase 7.5b (yt-dlp download engine + Settings)
+## 6. Next task: Phase 7.5c (yt-dlp picker)
+
+**Phase 7.5b quick try** (Settings → Downloads; the agent ran it once and undid it):
+1. Turn on **Big video sites (yt-dlp)** → a notice appears and the switch stays off; **I understand, turn it on** → on, and "Update yt-dlp automatically" appears.
+2. **Video tools:** yt-dlp and Deno say "Not installed…", FFmpeg says "Your copy: D:\tools\ffmpeg\bin\ffmpeg.exe". Click **Install** on yt-dlp (≈ 24 MB) and Deno (≈ 43 MB): progress shows in the row, then "Installed by AJBrowser: version …". They go to `%LOCALAPPDATA%\AJBrowser\Tools\`.
+3. Optional: **Choose…** your own copy of a tool, then **Clear** to go back.
+
+Nothing downloads videos with yt-dlp yet: the film button on YouTube & co. comes in **7.5c**.
 
 **Phase 7 quick try** (the agent already ran these on Shaka's public test stream, see plan Checkpoint 7c):
 1. A page with a DASH player (for example the dash.js reference player, `https://reference.dashif.org/dash.js/latest/samples/dash-if-reference-player/index.html`, press Load) → the film button shows a "Stream (DASH)" row with its length, a quality list and, when there are several, a sound list.
 2. Pick a small quality → Download → it appears in the downloads; the result plays with sound (your FFmpeg merges picture and sound; the note in the row says so).
-3. Optional: Settings → Downloads → FFmpeg → Clear, reopen the picker → the row says the video will be picture-only; set FFmpeg again afterwards.
+3. Optional: Settings → Downloads → Video tools → FFmpeg → Clear, reopen the picker → the row says the video will be picture-only; set FFmpeg again afterwards.
 4. Protected (DRM) DASH, e.g. on paid streaming sites → "Protected (DRM): can't be downloaded".
 
-Phase 7 added database migration v6 (two columns in `downloads`); it ran by itself. **Phase 7.5 (yt-dlp)** is under way: **7.5a** (Core) is done, nothing visible in the app yet. **7.5b** adds the download engine and Settings → Downloads → install/update yt-dlp, FFmpeg and Deno; **7.5c** the picker on YouTube, Facebook, Instagram…. Meanwhile the Phase 7 quick try below is still open. Meanwhile the Phase 6 checks below are still open.
+Phase 7 added database migration v6 (two columns in `downloads`); it ran by itself. The Phase 6 checks below are also still open.
 
 
 **Download-complete notice (added after your report; not yet tried in the app):**
@@ -302,7 +312,7 @@ Report anything odd, and the agent will fix it before Phase 4.
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 7.5 (yt-dlp) with checkpoint 7.5b.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 7.5 (yt-dlp) with checkpoint 7.5c.
 
 ## 7. uBlock Origin Lite test (V5): done
 

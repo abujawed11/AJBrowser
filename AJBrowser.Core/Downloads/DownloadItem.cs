@@ -20,6 +20,12 @@ public enum DownloadSource
 
     /// <summary>A DASH stream (Phase 7b): <see cref="DownloadItem.SourceUrl"/> is the manifest, the tracks are chosen by id.</summary>
     Dash,
+
+    /// <summary>
+    /// A video fetched by yt-dlp (Phase 7.5b): <see cref="DownloadItem.SourceUrl"/> is the web page,
+    /// <see cref="DownloadItem.VideoTrackId"/>/<see cref="DownloadItem.AudioTrackId"/> the yt-dlp format ids.
+    /// </summary>
+    YtDlp,
 }
 
 public enum DownloadState

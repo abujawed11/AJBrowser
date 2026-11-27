@@ -20,14 +20,18 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
 {
     private readonly SettingsStore _settings;
     private readonly ShellService _shell;
+    private readonly ToolService _tools;
     private readonly IPageHost _host;
     private readonly string _dataFolder;
     private bool _refreshing;
 
-    public SettingsPageViewModel(SettingsStore settings, AdBlockViewModel adBlock, ShellService shell, IPageHost host, string dataFolder)
+    public SettingsPageViewModel(SettingsStore settings, AdBlockViewModel adBlock, ShellService shell, ToolService tools, IPageHost host, string dataFolder)
     {
         _settings = settings;
         _shell = shell;
+        _tools = tools;
+        ToolRows = [new ToolRowViewModel(Core.Tools.ToolKind.YtDlp, tools), new ToolRowViewModel(Core.Tools.ToolKind.Deno, tools), new ToolRowViewModel(Core.Tools.ToolKind.Ffmpeg, tools)];
+        _tools.Changed += OnToolsChanged;
         _host = host;
         _dataFolder = dataFolder;
         AdBlock = adBlock;
@@ -103,19 +107,59 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
         set => _settings.Update(s => s with { AskWhereToSave = value });
     }
 
-    /// <summary>"Found: C:\…\ffmpeg.exe" or what happens without it.</summary>
-    public string FfmpegStatus => Core.Media.Ffmpeg.FfmpegLocator.Find(_settings.Current.FfmpegPath) is { } found
-        ? $"Found: {found}" + (_settings.Current.FfmpegPath is null ? " (on the PATH)" : string.Empty)
-        : _settings.Current.FfmpegPath is null
-            ? "Not set. Streams in TS format are saved as .ts (VLC and most players open them); with FFmpeg they become .mp4."
-            : "Not found at the chosen place. Streams in TS format are saved as .ts until it's fixed.";
+    // ---- video tools (Phase 7.5)
 
-    public bool HasFfmpegPath => _settings.Current.FfmpegPath is not null;
+    /// <summary>yt-dlp, Deno and FFmpeg: status, Install/Update, your own copy.</summary>
+    public IReadOnlyList<ToolRowViewModel> ToolRows { get; }
 
-    public void SetFfmpegPath(string path) => _settings.Update(s => s with { FfmpegPath = path });
+    /// <summary>
+    /// yt-dlp downloads on big sites. Turning it on first shows the notice (<see cref="ShowYtDlpNotice"/>); it's only
+    /// switched on by <see cref="AcceptYtDlpNoticeCommand"/>. Turning it off is immediate.
+    /// </summary>
+    public bool YtDlpEnabled
+    {
+        get => _settings.Current.YtDlpEnabled;
+        set
+        {
+            if (!value)
+            {
+                ShowYtDlpNotice = false;
+                _settings.Update(s => s with { YtDlpEnabled = false });
+            }
+            else if (!_settings.Current.YtDlpEnabled)
+            {
+                ShowYtDlpNotice = true;
+                OnPropertyChanged(); // the switch stays off until the notice is accepted
+            }
+        }
+    }
+
+    [ObservableProperty]
+    public partial bool ShowYtDlpNotice { get; set; }
 
     [RelayCommand]
-    private void ClearFfmpegPath() => _settings.Update(s => s with { FfmpegPath = null });
+    private void AcceptYtDlpNotice()
+    {
+        ShowYtDlpNotice = false;
+        _settings.Update(s => s with { YtDlpEnabled = true });
+    }
+
+    [RelayCommand]
+    private void DeclineYtDlpNotice() => ShowYtDlpNotice = false;
+
+    public bool AutoUpdateYtDlp
+    {
+        get => _settings.Current.AutoUpdateYtDlp;
+        set => _settings.Update(s => s with { AutoUpdateYtDlp = value });
+    }
+
+    private void OnToolsChanged(object? sender, EventArgs e)
+    {
+        foreach (var row in ToolRows)
+        {
+            row.Refresh();
+        }
+    }
 
     /// <summary>Look for videos on pages (the toolbar's film button). Switching off also clears what was found.</summary>
     public bool DetectVideos
@@ -242,10 +286,15 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
                      {
                          nameof(IsThemeSystem), nameof(IsThemeLight), nameof(IsThemeDark), nameof(ShowBookmarksBar),
                          nameof(IsStartupHomePage), nameof(IsStartupRestore), nameof(DownloadFolderText),
-                         nameof(HasCustomDownloadFolder), nameof(AskWhereToSave), nameof(MaxConcurrentDownloads), nameof(DetectVideos), nameof(FfmpegStatus), nameof(HasFfmpegPath),
+                         nameof(HasCustomDownloadFolder), nameof(AskWhereToSave), nameof(MaxConcurrentDownloads), nameof(DetectVideos), nameof(YtDlpEnabled), nameof(AutoUpdateYtDlp),
                      })
             {
                 OnPropertyChanged(name);
+            }
+
+            foreach (var row in ToolRows ?? [])
+            {
+                row.Refresh();
             }
         }
         finally
@@ -256,5 +305,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IInternalP
 
     private void OnSettingsChanged(object? sender, AppSettings previous) => Refresh();
 
-    public void Dispose() => _settings.Changed -= OnSettingsChanged;
+    public void Dispose()
+    {
+        _settings.Changed -= OnSettingsChanged;
+        _tools.Changed -= OnToolsChanged;
+    }
 }

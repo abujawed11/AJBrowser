@@ -37,17 +37,24 @@ public partial class SettingsPage : UserControl
     }
 
     /// <summary>Pick ffmpeg.exe (AJBrowser only runs it on local files it created; it never downloads it).</summary>
-    private void ChooseFfmpeg_Click(object sender, System.Windows.RoutedEventArgs e)
+    /// <summary>Choose… on a tool row: your own copy of yt-dlp, Deno or FFmpeg.</summary>
+    private void ChooseTool_Click(object sender, System.Windows.RoutedEventArgs e)
     {
+        if ((sender as System.Windows.FrameworkElement)?.Tag is not ViewModels.Pages.ToolRowViewModel row)
+        {
+            return;
+        }
+
+        var exe = Core.Tools.ToolCatalog.For(row.Kind).ExeName;
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Choose ffmpeg.exe",
-            Filter = "FFmpeg (ffmpeg.exe)|ffmpeg.exe|Programs (*.exe)|*.exe",
+            Title = $"Choose {exe}",
+            Filter = $"{row.Name} ({exe})|{exe}|Programs (*.exe)|*.exe",
             CheckFileExists = true,
         };
         if (dialog.ShowDialog(System.Windows.Window.GetWindow(this)) == true)
         {
-            Page?.SetFfmpegPath(dialog.FileName);
+            row.ChoosePath(dialog.FileName);
         }
     }
 

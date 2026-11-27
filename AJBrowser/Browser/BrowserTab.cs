@@ -335,7 +335,7 @@ public sealed class BrowserTab : IDisposable
         _attachedEnvironment = environment;
         _core = webView.CoreWebView2;
         Configure(webView, _core);
-        _environment.RememberProfile(_core.Profile);
+        _environment.RememberProfile(_core.Profile, _core.Settings.UserAgent);
 
         // The ad blocker must be installed before the first page loads, or that page still shows ads.
         // Only the first WebViews actually wait (a few seconds on the very first run); never throws.

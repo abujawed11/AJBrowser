@@ -55,15 +55,17 @@ public sealed class MediaDownloadService
     private readonly DashDownloader _dash;
     private readonly FileNamer _namer;
     private readonly SettingsStore _settings;
+    private readonly Func<string?> _ffmpeg;
     private readonly Func<string, string, string?> _askSavePath;
     private readonly AppLogger _log;
 
     /// <param name="askSavePath">The Save dialog (folder, suggested name) → chosen path or null; shared with browser downloads.</param>
-    public MediaDownloadService(DownloadManager manager, HlsDownloader hls, DashDownloader dash, FileNamer namer, SettingsStore settings, Func<string, string, string?> askSavePath, AppLogger log)
+    public MediaDownloadService(DownloadManager manager, HlsDownloader hls, DashDownloader dash, FileNamer namer, SettingsStore settings, Func<string?> ffmpeg, Func<string, string, string?> askSavePath, AppLogger log)
     {
         _manager = manager;
         _hls = hls;
         _dash = dash;
+        _ffmpeg = ffmpeg;
         _namer = namer;
         _settings = settings;
         _askSavePath = askSavePath;
@@ -260,7 +262,7 @@ public sealed class MediaDownloadService
                 .Select(v => new QualityOption(HlsAnalysis.VariantLabel(v, inspection.DurationSeconds), v.Uri))
                 .ToList();
             var canDownload = inspection.Support == HlsSupport.Supported;
-            var note = canDownload && inspection.HasSeparateAudio && Core.Media.Ffmpeg.FfmpegLocator.Find(_settings.Current.FfmpegPath) is null ? NoSoundNote : null;
+            var note = canDownload && inspection.HasSeparateAudio && _ffmpeg() is null ? NoSoundNote : null;
             return new StreamInfo(canDownload, inspection.Problem, qualities, inspection.DurationSeconds, note, inspection.ReferencedPlaylists);
         }
         catch (Exception ex)
@@ -285,7 +287,7 @@ public sealed class MediaDownloadService
                 return new StreamInfo(false, inspection.Problem, [], inspection.DurationSeconds, null, inspection.ReferencedFiles);
             }
 
-            var ffmpeg = Core.Media.Ffmpeg.FfmpegLocator.Find(_settings.Current.FfmpegPath) is not null;
+            var ffmpeg = _ffmpeg() is not null;
             var qualities = inspection.Video.Select(v =>
             {
                 var sound = ffmpeg ? DashAnalysis.PickAudio(manifest, v, PreferredLanguage) : null;

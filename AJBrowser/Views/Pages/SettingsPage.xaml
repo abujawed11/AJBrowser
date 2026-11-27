@@ -136,16 +136,78 @@
                     </DockPanel>
                     <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
                     <DockPanel>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Content="Clear" Command="{Binding ClearFfmpegPathCommand}" Margin="0,0,8,0"
-                                    Visibility="{Binding HasFfmpegPath, Converter={StaticResource PageBoolToVisibility}}" />
-                            <Button Content="Choose…" Click="ChooseFfmpeg_Click" />
-                        </StackPanel>
+                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggleStyle}" VerticalAlignment="Center"
+                                      IsChecked="{Binding YtDlpEnabled}" AutomationProperties.Name="Big video sites (yt-dlp)" />
                         <StackPanel>
-                            <TextBlock Text="FFmpeg (optional)" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding FfmpegStatus}" Style="{StaticResource SecondaryTextStyle}" />
+                            <TextBlock Text="Big video sites (yt-dlp)" FontWeight="SemiBold" />
+                            <TextBlock Text="Download from YouTube, Facebook, Instagram, TikTok, X, Vimeo and 1,000+ other sites with the free yt-dlp tool."
+                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                         </StackPanel>
                     </DockPanel>
+                    <!-- The one-time notice when switching it on. -->
+                    <Border Margin="0,10,0,0" Padding="12" CornerRadius="6" Background="{DynamicResource TabHoverBackgroundBrush}"
+                            Visibility="{Binding ShowYtDlpNotice, Converter={StaticResource PageBoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock FontWeight="SemiBold" Text="Before you turn this on" />
+                            <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Style="{StaticResource SecondaryTextStyle}"
+                                       Text="Only download videos you have the right to keep, such as your own, public-domain or freely licensed ones. Some sites' terms of service forbid downloading. Protected (DRM) videos can't be downloaded. yt-dlp is a separate open-source program (public domain) that AJBrowser installs from its official release when you click Install below." />
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="I understand, turn it on" Command="{Binding AcceptYtDlpNoticeCommand}" Style="{DynamicResource AccentButtonStyle}" Margin="0,0,8,0" />
+                                <Button Content="Cancel" Command="{Binding DeclineYtDlpNoticeCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <DockPanel Margin="0,10,0,0" Visibility="{Binding YtDlpEnabled, Converter={StaticResource PageBoolToVisibility}}">
+                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SwitchToggleStyle}" VerticalAlignment="Center"
+                                      IsChecked="{Binding AutoUpdateYtDlp}" AutomationProperties.Name="Update yt-dlp automatically" />
+                        <StackPanel>
+                            <TextBlock Text="Update yt-dlp automatically" FontWeight="SemiBold" />
+                            <TextBlock Text="Checked once a day. Sites like YouTube change often, and an old yt-dlp stops working with them."
+                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
+                    <TextBlock Text="Video tools" FontWeight="SemiBold" />
+                    <TextBlock Text="Free programs AJBrowser uses for some videos. Install downloads the official release, checks it and keeps it in AJBrowser's data folder; Choose… uses your own copy instead."
+                               Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Margin="0,0,0,4" />
+                    <ItemsControl ItemsSource="{Binding ToolRows}" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ToolRowViewModel}">
+                                <DockPanel Margin="0,8,0,0">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}" Margin="0,0,8,0" MinWidth="76"
+                                                AutomationProperties.Name="{Binding Name, StringFormat='Install or update {0}'}" />
+                                        <Button Content="Clear" Command="{Binding ClearPathCommand}" Margin="0,0,8,0"
+                                                Visibility="{Binding HasCustomPath, Converter={StaticResource PageBoolToVisibility}}"
+                                                AutomationProperties.Name="{Binding Name, StringFormat='Stop using your own {0}'}" />
+                                        <Button Content="Choose…" Click="ChooseTool_Click" Tag="{Binding}"
+                                                AutomationProperties.Name="{Binding Name, StringFormat='Choose your own {0}'}" />
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock>
+                                            <Run Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold" />
+                                            <Run Text="{Binding Licence, Mode=OneWay}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="{StaticResource CaptionFontSize}" />
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Status}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Progress}" FontSize="{StaticResource CaptionFontSize}" TextWrapping="Wrap">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource SecondaryTextStyle}">
+                                                    <Style.Triggers>
+                                                        <Trigger Property="Text" Value="">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </Trigger>
+                                                        <DataTrigger Binding="{Binding HasError}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                     <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
                     <DockPanel>
                         <ComboBox DockPanel.Dock="Right" VerticalAlignment="Center" MinWidth="80"

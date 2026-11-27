@@ -43,18 +43,33 @@ public sealed class AppServices : IDisposable
         Favicons = new FaviconService(new FaviconRepository(database), CreateLogger(nameof(FaviconService)));
         Session = new SessionService(new SessionRepository(database), CreateLogger(nameof(SessionService)));
 
+        // External tools (Phase 7.5): yt-dlp, FFmpeg, Deno — your own path, AJBrowser's installed copy, or the PATH.
+        Tools = new ToolService(
+            new Core.Tools.ToolInstaller(new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMinutes(10) }, paths.Tools),
+            settings,
+            CreateLogger(nameof(ToolService)));
+
         // Downloads (Phase 4). Created on the UI thread, so the manager raises its events there.
         var namer = _namer = new FileNamer();
         Hls = new Core.Media.Hls.HlsDownloader(
             new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(60) }, // per piece; pieces are small
             Path.Combine(paths.Temp, "hls"),
-            () => Core.Media.Ffmpeg.FfmpegLocator.Find(Settings.Current.FfmpegPath));
-        Dash = new Core.Media.Dash.DashDownloader(Hls, () => Core.Media.Ffmpeg.FfmpegLocator.Find(Settings.Current.FfmpegPath));
+            FfmpegPath);
+        Dash = new Core.Media.Dash.DashDownloader(Hls, FfmpegPath);
+        var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+        YtDlp = new Core.Media.YtDlp.YtDlpDownloader(
+            Path.Combine(paths.Temp, "ytdlp"),
+            new Core.Media.YtDlp.YtDlpTools(
+                () => Tools.Locate(Core.Tools.ToolKind.YtDlp),
+                FfmpegPath,
+                () => Tools.Locate(Core.Tools.ToolKind.Deno)),
+            // Cookies come from the WebView2 profile, which lives on the UI thread.
+            urls => dispatcher.InvokeAsync(() => Browser.GetSessionAsync(urls)).Task.Unwrap());
         DownloadManager = new DownloadManager(
             new DownloadRepository(database),
             new HttpFileDownloader(new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
             namer,
-            streams: new Core.Media.StreamDownloaders(Hls, Dash));
+            streams: new Core.Media.StreamDownloaders(Hls, Dash, YtDlp));
         var downloadLog = CreateLogger(nameof(DownloadManager));
         DownloadManager.MaxConcurrent = settings.Current.MaxConcurrentDownloads;
         DownloadManager.PersistenceFailed += (_, ex) => downloadLog.Warn("Saving a download's state failed", ex);
@@ -62,7 +77,7 @@ public sealed class AppServices : IDisposable
             DownloadManager, namer, settings, AskSavePath, () => KnownFolders.Downloads, CreateLogger(nameof(DownloadInterceptor)));
         Downloads = new DownloadsViewModel(DownloadManager, DownloadInterceptor, shell, settings, CreateLogger(nameof(DownloadsViewModel)));
 
-        MediaDownloads = new MediaDownloadService(DownloadManager, Hls, Dash, _namer, settings, AskSavePath, CreateLogger(nameof(MediaDownloadService)));
+        MediaDownloads = new MediaDownloadService(DownloadManager, Hls, Dash, _namer, settings, FfmpegPath, AskSavePath, CreateLogger(nameof(MediaDownloadService)));
 
         _tabServices = new TabServices(
             AddressResolver,
@@ -106,6 +121,15 @@ public sealed class AppServices : IDisposable
 
     /// <summary>DASH streams (Phase 7); shares the HLS piece engine and its temp folder.</summary>
     public Core.Media.Dash.DashDownloader Dash { get; }
+
+    /// <summary>yt-dlp, FFmpeg and Deno: where they are, installing and updating them (Phase 7.5).</summary>
+    public ToolService Tools { get; }
+
+    /// <summary>Video downloads through yt-dlp for YouTube, Facebook, Instagram… (Phase 7.5).</summary>
+    public Core.Media.YtDlp.YtDlpDownloader YtDlp { get; }
+
+    /// <summary>The FFmpeg to use right now (Settings path, AJBrowser's copy, or the PATH), or null.</summary>
+    public string? FfmpegPath() => Tools.Locate(Core.Tools.ToolKind.Ffmpeg);
 
     /// <summary>Owns every download and its database rows.</summary>
     public DownloadManager DownloadManager { get; }
@@ -174,6 +198,7 @@ public sealed class AppServices : IDisposable
             Settings,
             AdBlock ?? throw new InvalidOperationException("AdBlock must be set before pages are created."),
             Shell,
+            Tools,
             host,
             Paths.Root),
         InternalPage.Downloads => new DownloadsPageViewModel(Downloads),

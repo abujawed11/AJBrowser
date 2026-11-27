@@ -58,6 +58,21 @@ public sealed record AppSettings
     /// </summary>
     public string? FfmpegPath { get; init; }
 
+    /// <summary>
+    /// Offer yt-dlp downloads on YouTube, Facebook, Instagram and other big sites (Phase 7.5). Off until the user turns
+    /// it on, which is when the one-time notice about rights and site terms is shown.
+    /// </summary>
+    public bool YtDlpEnabled { get; init; }
+
+    /// <summary>A yt-dlp.exe of the user's own (file or folder). Null: AJBrowser's installed copy, else the PATH.</summary>
+    public string? YtDlpPath { get; init; }
+
+    /// <summary>A deno.exe of the user's own (file or folder), the JavaScript runtime yt-dlp needs for YouTube.</summary>
+    public string? DenoPath { get; init; }
+
+    /// <summary>Keep AJBrowser's own copy of yt-dlp up to date (checked at most daily). On by default: it goes stale on YouTube within weeks.</summary>
+    public bool AutoUpdateYtDlp { get; init; } = true;
+
     /// <summary>Look for videos on pages and offer them in the toolbar (Phase 5). On by default.</summary>
     public bool DetectVideos { get; init; } = true;
 
@@ -142,6 +157,16 @@ public sealed record AppSettings
         if (string.IsNullOrWhiteSpace(FfmpegPath))
         {
             result = result with { FfmpegPath = null };
+        }
+
+        if (string.IsNullOrWhiteSpace(YtDlpPath))
+        {
+            result = result with { YtDlpPath = null };
+        }
+
+        if (string.IsNullOrWhiteSpace(DenoPath))
+        {
+            result = result with { DenoPath = null };
         }
 
         if (string.IsNullOrWhiteSpace(DownloadFolder))

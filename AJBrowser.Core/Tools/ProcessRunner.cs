@@ -99,6 +99,7 @@ public static class ProcessRunner
             return new ProcessResult(-1, [], [$"The program couldn't be started: {ex.Message}"]);
         }
 
+        ChildProcessJob.TryAssign(process); // ends with AJBrowser, together with anything it starts (V17)
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         try

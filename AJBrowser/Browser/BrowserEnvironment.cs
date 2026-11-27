@@ -66,7 +66,47 @@ public sealed class BrowserEnvironment
     }
 
     /// <summary>Called by every new WebView: browsing data belongs to the profile, which is only reachable through a WebView.</summary>
-    internal void RememberProfile(CoreWebView2Profile profile) => _profile = profile;
+    internal void RememberProfile(CoreWebView2Profile profile, string? userAgent = null)
+    {
+        _profile = profile;
+        if (!string.IsNullOrEmpty(userAgent))
+        {
+            _userAgent = userAgent;
+        }
+    }
+
+    private string? _userAgent;
+
+    /// <summary>
+    /// The cookies the profile would send to each of <paramref name="urls"/> (deduplicated) and the browser's user
+    /// agent, for handing a page over to yt-dlp (plan Phase 7.5b). Empty before the first tab has started. Must be
+    /// called on the UI thread. The values are never logged or stored by AJBrowser.
+    /// </summary>
+    public async Task<Core.Media.YtDlp.BrowserSession> GetSessionAsync(IReadOnlyList<Uri> urls)
+    {
+        if (_profile is null)
+        {
+            return Core.Media.YtDlp.BrowserSession.Empty;
+        }
+
+        var result = new List<Core.Media.YtDlp.BrowserCookie>();
+        var seen = new HashSet<(string, string, string)>();
+        foreach (var url in urls)
+        {
+            foreach (var c in await _profile.CookieManager.GetCookiesAsync(url.AbsoluteUri))
+            {
+                if (seen.Add((c.Name, c.Domain, c.Path)))
+                {
+                    result.Add(new Core.Media.YtDlp.BrowserCookie(
+                        c.Name, c.Value, c.Domain, c.Path, c.IsSecure, c.IsHttpOnly,
+                        IsHostOnly: !c.Domain.StartsWith('.'),
+                        c.IsSession ? null : new DateTimeOffset(c.Expires.ToUniversalTime())));
+                }
+            }
+        }
+
+        return new Core.Media.YtDlp.BrowserSession(result, _userAgent);
+    }
 
     /// <summary>
     /// Clears cookies, site storage, the disk cache and the engine's own history, from <paramref name="fromUtc"/>

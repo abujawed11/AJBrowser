@@ -124,32 +124,34 @@ public partial class App : Application
 
         await OfferPartialFileCleanupAsync(services);
         RemoveStaleStreamTemp(services);
+        _ = UpdateToolsLaterAsync(services);
     }
 
     /// <summary>
-    /// Temporary pieces of stream downloads (Temp\hls\{id}) are AJBrowser's own files: keep those of stream jobs that
-    /// can still continue, delete the rest (finished, cancelled or removed from the list) without asking.
+    /// Temporary files of stream and yt-dlp downloads (Temp\hls\{id}, Temp\ytdlp\{id}) are AJBrowser's own: keep
+    /// those of jobs that can still continue, delete the rest (finished, cancelled, removed from the list, and yt-dlp
+    /// inspections) without asking. Cookie files left behind by a crash are always deleted.
     /// </summary>
     private void RemoveStaleStreamTemp(AppServices services)
     {
         try
         {
-            var root = System.IO.Path.Combine(services.Paths.Temp, "hls");
-            if (!System.IO.Directory.Exists(root))
-            {
-                return;
-            }
-
             var keep = services.DownloadManager.Items
-                .Where(i => i.Source is Core.Downloads.DownloadSource.Hls or Core.Downloads.DownloadSource.Dash && i.State is not (Core.Downloads.DownloadState.Completed or Core.Downloads.DownloadState.Cancelled))
+                .Where(i => i.Source is not Core.Downloads.DownloadSource.File && i.State is not (Core.Downloads.DownloadState.Completed or Core.Downloads.DownloadState.Cancelled))
                 .Select(i => i.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 .ToHashSet();
-            foreach (var folder in System.IO.Directory.GetDirectories(root))
+            foreach (var name in new[] { "hls", "ytdlp" })
             {
-                if (!keep.Contains(System.IO.Path.GetFileName(folder)))
+                var root = System.IO.Path.Combine(services.Paths.Temp, name);
+                if (!System.IO.Directory.Exists(root))
                 {
-                    services.Hls.DeleteTemp(long.TryParse(System.IO.Path.GetFileName(folder), out var id) ? id : -1);
-                    if (System.IO.Directory.Exists(folder))
+                    continue;
+                }
+
+                foreach (var folder in System.IO.Directory.GetDirectories(root))
+                {
+                    Core.Media.YtDlp.NetscapeCookieFile.Delete(folder);
+                    if (!keep.Contains(System.IO.Path.GetFileName(folder)))
                     {
                         System.IO.Directory.Delete(folder, recursive: true);
                     }
@@ -159,6 +161,24 @@ public partial class App : Application
         catch (Exception ex)
         {
             _log?.Debug($"Stream temp cleanup skipped: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// Thirty seconds after startup (not to slow it down): the daily yt-dlp update check, if yt-dlp downloads and
+    /// automatic updates are on. Never while a yt-dlp download runs.
+    /// </summary>
+    private async Task UpdateToolsLaterAsync(AppServices services)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            await services.Tools.UpdateYtDlpIfDueAsync(() => services.DownloadManager.Items.Any(
+                i => i.Source == Core.Downloads.DownloadSource.YtDlp && i.State == Core.Downloads.DownloadState.Downloading));
+        }
+        catch (Exception ex)
+        {
+            _log?.Warn($"The yt-dlp update check failed: {ex.GetType().Name}");
         }
     }
 
