@@ -281,7 +281,8 @@ public sealed class YtDlpDownloader : IStreamDownloader
                     return new DownloadResult(DownloadOutcome.Failed, tracker.Received, null, null, problem.Message);
                 }
 
-                if (tracker.FinalPath is not { } finalPath || !File.Exists(finalPath))
+                var finalPath = tracker.FinalPath is { } printed && File.Exists(printed) ? printed : FindOutput(request.TargetPath);
+                if (finalPath is null)
                 {
                     return Failed("yt-dlp finished, but the file wasn't found. Retry.");
                 }
@@ -305,6 +306,31 @@ public sealed class YtDlpDownloader : IStreamDownloader
         }
 
         static DownloadResult Failed(string message) => new(DownloadOutcome.Failed, 0, null, null, message);
+    }
+
+    /// <summary>
+    /// The finished file when yt-dlp's printed path can't be used: AJBrowser chose the name, so it's that name with the
+    /// extension yt-dlp gave it (the planned one first). yt-dlp's own leftovers (.part, .ytdl, ".f137.mp4" pieces) don't count.
+    /// </summary>
+    internal static string? FindOutput(string targetPath)
+    {
+        if (File.Exists(targetPath))
+        {
+            return targetPath;
+        }
+
+        var folder = Path.GetDirectoryName(Path.GetFullPath(targetPath));
+        var stem = Path.GetFileNameWithoutExtension(targetPath);
+        if (folder is null || !Directory.Exists(folder))
+        {
+            return null;
+        }
+
+        return Directory.EnumerateFiles(folder)
+            .Where(f => string.Equals(Path.GetFileNameWithoutExtension(f), stem, StringComparison.OrdinalIgnoreCase))
+            .Where(f => Path.GetExtension(f).ToLowerInvariant() is not (".part" or ".ytdl" or ".ajpart" or ".tmp"))
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
     }
 
     /// <summary>The merge container from the target's extension (chosen when the row was built): mp4, webm or mkv.</summary>

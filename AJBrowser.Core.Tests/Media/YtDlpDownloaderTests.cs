@@ -111,6 +111,32 @@ public sealed class YtDlpDownloaderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_garbled_final_path_falls_back_to_the_planned_name()
+    {
+        // Before --encoding utf-8, yt-dlp printed an Urdu path with the Urdu letters missing (your report, F23).
+        const string urdu = "آج بڑے سے بڑا عالم دین؟ 1080p";
+        _behaviour = (_, onOutput, _) =>
+        {
+            File.WriteAllText(Target(urdu + ".mp4"), "video");
+            onOutput!("ajb-file:" + Target(" 1080p.mp4")); // what arrived: the letters gone
+            return Task.FromResult(new ProcessResult(0, [], []));
+        };
+        var result = await Create().DownloadAsync(1, Request(Target(urdu + ".mp4")), null, CancellationToken.None);
+        Assert.Equal(DownloadOutcome.Completed, result.Outcome);
+        Assert.Null(result.FinalPath); // the planned file
+    }
+
+    [Fact]
+    public void Finding_the_output_ignores_yt_dlps_leftovers()
+    {
+        File.WriteAllText(Target("Clip 720p.f137.mp4.part"), "x");
+        File.WriteAllText(Target("Clip 720p.part"), "x");
+        Assert.Null(YtDlpDownloader.FindOutput(Target("Clip 720p.mp4")));
+        File.WriteAllText(Target("Clip 720p.mkv"), "x"); // yt-dlp chose another container
+        Assert.Equal(Target("Clip 720p.mkv"), YtDlpDownloader.FindOutput(Target("Clip 720p.mp4")));
+    }
+
+    [Fact]
     public async Task A_different_final_name_is_reported()
     {
         _behaviour = (_, onOutput, _) =>

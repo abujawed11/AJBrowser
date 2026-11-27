@@ -35,7 +35,7 @@ public static class YtDlpArguments
     {
         RequireHttp(pageUrl);
         // Warnings stay on: "No supported JavaScript runtime" is one, and it explains missing YouTube formats.
-        var args = new List<string> { "--ignore-config", "--no-playlist", "-J" };
+        var args = new List<string> { "--ignore-config", "--no-playlist", "--encoding", "utf-8", "-J" };
         AddCommon(args, denoPath, cookieFile, userAgent);
         args.Add("--");
         args.Add(pageUrl.AbsoluteUri);
@@ -58,7 +58,9 @@ public static class YtDlpArguments
 
         var args = new List<string>
         {
-            "--ignore-config", "--no-playlist", "--newline", "--no-mtime", "--no-overwrites", "--continue",
+            // --encoding: yt-dlp.exe ignores PYTHONIOENCODING/PYTHONUTF8 and, writing to a pipe, drops every character
+            // outside the Windows code page (Urdu, Hindi, emoji…) from its output, including the final file path (F23).
+            "--ignore-config", "--no-playlist", "--encoding", "utf-8", "--newline", "--no-mtime", "--no-overwrites", "--continue",
             "--no-simulate", "--progress", // --print below would otherwise imply --simulate and --quiet
             "--progress-template", $"download:{ProgressPrefix} %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s %(info.format_id)s",
             "--print", $"after_move:{FilePrefix}%(filepath)s",

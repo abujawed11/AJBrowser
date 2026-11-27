@@ -237,6 +237,7 @@ public sealed class YtDlpArgumentsTests
     {
         var args = YtDlpArguments.Download(Options);
         Assert.Equal("--ignore-config", args[0]);
+        Assert.Equal("utf-8", After(args, "--encoding")); // or non-Latin titles vanish from yt-dlp's output (F23)
         Assert.Contains("--no-playlist", args);
         Assert.Contains("--no-simulate", args); // --print would otherwise skip the download
         Assert.Equal("137+140", After(args, "-f"));
@@ -282,7 +283,7 @@ public sealed class YtDlpArgumentsTests
     public void Inspect_arguments()
     {
         var args = YtDlpArguments.Inspect(new Uri("https://www.instagram.com/reel/XYZ/"), @"C:\d\deno.exe", null, "UA");
-        Assert.Equal(new[] { "--ignore-config", "--no-playlist", "-J", "--js-runtimes", @"deno:C:\d\deno.exe", "--user-agent", "UA", "--", "https://www.instagram.com/reel/XYZ/" }, args);
+        Assert.Equal(new[] { "--ignore-config", "--no-playlist", "--encoding", "utf-8", "-J", "--js-runtimes", @"deno:C:\d\deno.exe", "--user-agent", "UA", "--", "https://www.instagram.com/reel/XYZ/" }, args);
     }
 
     private static string After(IReadOnlyList<string> args, string option) => args[args.ToList().IndexOf(option) + 1];
