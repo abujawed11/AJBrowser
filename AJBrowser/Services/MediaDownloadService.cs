@@ -165,7 +165,7 @@ public sealed class MediaDownloadService
             // Cookies for the media playlist's own host; the downloader sends them only to that host.
             var cookies = await cookieHeader(plan.MediaPlaylistUrl!);
             var item = await _manager.EnqueueAsync(
-                new DownloadRequest(plan.MediaPlaylistUrl!, path, context.ToHeaders(cookies), DownloadSource.Hls, plan.AudioPlaylistUrl),
+                new DownloadRequest(plan.MediaPlaylistUrl!, path, context.ToHeaders(cookies), DownloadSource.Hls, plan.AudioPlaylistUrl, ExpectedBytes: plan.EstimatedBytes),
                 pageUrl?.AbsoluteUri);
             _log.Info($"Stream download queued: {Redactor.MediaUrl(plan.MediaPlaylistUrl)} ({plan.Media!.Segments.Count} pieces"
                       + (plan.AudioPlaylistUrl is null ? string.Empty : $", sound track \"{plan.AudioName}\"") + $") → {Path.GetFileName(path)}");
@@ -220,7 +220,7 @@ public sealed class MediaDownloadService
             // Cookies for the manifest's own host; the downloader sends them only to that host.
             var cookies = await cookieHeader(media.Url);
             var item = await _manager.EnqueueAsync(
-                new DownloadRequest(media.Url, path, context.ToHeaders(cookies), DownloadSource.Dash, null, plan.Video.Id, plan.Audio?.Id),
+                new DownloadRequest(media.Url, path, context.ToHeaders(cookies), DownloadSource.Dash, null, plan.Video.Id, plan.Audio?.Id, plan.EstimatedBytes),
                 pageUrl?.AbsoluteUri);
             var height = plan.Video.Height?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?";
             var sound = plan.Audio is null ? "no separate sound" : $"sound \"{DashAnalysis.AudioLabel(plan.Audio)}\"";
@@ -255,7 +255,7 @@ public sealed class MediaDownloadService
         try
         {
             var item = await _manager.EnqueueAsync(
-                new DownloadRequest(page, path, null, DownloadSource.YtDlp, null, row.VideoFormatId, row.AudioFormatId),
+                new DownloadRequest(page, path, null, DownloadSource.YtDlp, null, row.VideoFormatId, row.AudioFormatId, row.EstimatedBytes),
                 page.AbsoluteUri);
             _log.Info($"yt-dlp download queued: {Redactor.Url(page)} (formats {row.FormatSelector}) → {Path.GetFileName(path)}");
             return new MediaDownloadOutcome(item, null);

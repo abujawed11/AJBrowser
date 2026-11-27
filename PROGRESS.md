@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **772 passing tests**.
+   - Test Explorer: expect **775 passing tests**.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -150,7 +150,7 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Media/Ffmpeg/              (6b) FfmpegLocator (Settings path or PATH), FfmpegRunner (local files only), progress parser
   Security/RequestContext.cs (5a) allowlisted headers for app downloads; cookies only added at download time
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (772 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (775 tests)
 ```
 
 **Packages:**
@@ -201,6 +201,8 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 4. **Please try:** a public Facebook video, an Instagram reel, a TikTok, a Vimeo video; a YouTube video with several sound languages (a sound list appears); an age-restricted video while signed in to YouTube in AJBrowser (it should work; signed out it should say "needs you to be signed in").
 5. On another site with a video: film button → **Try yt-dlp on this page**, or right-click the page → **Download video with yt-dlp**.
 6. On YouTube, click another video in the page (no full reload) and reopen the film button → it shows the new video.
+
+**Fixed after your report:** yt-dlp downloads now show a total size from the start (the size the picker showed, replaced by the exact one once yt-dlp knows it) and "Starting…" instead of "0 bytes" while yt-dlp prepares. Please check it once.
 
 **Old log entries:** before this fix, normal downloads from file hosts wrote their full address (with sign-in tokens in the path) into AJBrowser's log. New entries are redacted; you may want to delete the old log files (⋯ → Open data folder → `Logs`). They never left your PC.
 

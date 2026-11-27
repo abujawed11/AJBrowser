@@ -72,6 +72,8 @@ public static class DownloadText
         return item.State switch
         {
             DownloadState.Queued => "Waiting…",
+            // Nothing received yet: the downloader is still preparing (yt-dlp reads the page again first, a few seconds).
+            DownloadState.Downloading when item.ReceivedBytes <= 0 => Join("Starting…", item.TotalBytes is > 0 and var expected ? Size(expected, culture) : null),
             DownloadState.Downloading => Join(Progress(item, culture),
                                               item.BytesPerSecond is > 0 and var speed ? Speed(speed, culture) : null,
                                               item.Remaining is { } left ? Remaining(left, culture) : null),

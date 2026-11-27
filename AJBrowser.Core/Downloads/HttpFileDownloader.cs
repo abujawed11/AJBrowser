@@ -20,6 +20,8 @@ public enum DownloadOutcome
 /// <remarks>
 /// <see cref="AudioUrl"/>: an HLS stream's separate sound track (its media playlist), merged with FFmpeg.
 /// <see cref="VideoTrackId"/>/<see cref="AudioTrackId"/>: a DASH stream's chosen representations (<see cref="Url"/> is the manifest).
+/// <see cref="ExpectedBytes"/>: the size the picker showed (exact or estimated), shown as the total until the downloader
+/// reports a better one (yt-dlp only knows the sound part's size once it starts it, streams only after their first piece).
 /// </remarks>
 public sealed record DownloadRequest(
     Uri Url,
@@ -28,7 +30,8 @@ public sealed record DownloadRequest(
     DownloadSource Source = DownloadSource.File,
     Uri? AudioUrl = null,
     string? VideoTrackId = null,
-    string? AudioTrackId = null);
+    string? AudioTrackId = null,
+    long? ExpectedBytes = null);
 
 public sealed record DownloadProgress(long ReceivedBytes, long? TotalBytes);
 

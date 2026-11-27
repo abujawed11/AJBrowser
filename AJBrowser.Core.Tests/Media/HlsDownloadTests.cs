@@ -420,10 +420,20 @@ public sealed class HlsInDownloadManagerTests : DatabaseTestBase
         var done = manager.Find(item.Id)!;
         Assert.Equal(DownloadState.Completed, done.State);
         Assert.Equal(5, done.TotalBytes); // the real size, not an estimate
+
+        // The picker's size estimate is the total from the start (until the downloader knows better).
+        var estimated = await manager.EnqueueAsync(new DownloadRequest(new Uri("https://cdn.example/p.m3u8"), Path.Combine(folder, "w.ts"), null, DownloadSource.Hls, ExpectedBytes: 4321));
+        Assert.Equal(4321, estimated.TotalBytes);
+        for (var i = 0; i < 200 && manager.Find(estimated.Id)?.State != DownloadState.Completed; i++)
+        {
+            await Task.Delay(25);
+        }
+
+        Assert.Equal(5, manager.Find(estimated.Id)!.TotalBytes); // replaced by the real size
         Assert.Equal([1, 2, 3, 4, 5], File.ReadAllBytes(Path.Combine(folder, "v.ts")));
 
         await manager.ShutdownAsync(TimeSpan.FromSeconds(2));
-        var saved = Assert.Single(await repo.GetRecentAsync(10));
+        var saved = (await repo.GetRecentAsync(10)).Single(d => d.Id == item.Id);
         Assert.Equal(DownloadSource.Hls, saved.Source);
 
         var withAudio = await repo.AddAsync(saved with { Id = 0, AudioSourceUrl = "https://cdn.example/en.m3u8" });

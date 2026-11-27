@@ -22,14 +22,17 @@ public enum YtDlpStage
 public sealed class YtDlpProgressTracker
 {
     private readonly IReadOnlyList<string> _parts;
+    private readonly long? _expectedTotal;
     private readonly long?[] _sizes;
     private readonly long[] _done;
     private int _current;
 
     /// <param name="formatSelector">"137+140" (two parts) or "18" (one).</param>
     /// <param name="expectedSizes">Known or estimated size per part, in the same order (null when unknown).</param>
-    public YtDlpProgressTracker(string formatSelector, IReadOnlyList<long?>? expectedSizes = null)
+    /// <param name="expectedTotal">The whole download's size as the picker showed it; stands in for parts not started yet.</param>
+    public YtDlpProgressTracker(string formatSelector, IReadOnlyList<long?>? expectedSizes = null, long? expectedTotal = null)
     {
+        _expectedTotal = expectedTotal is > 0 ? expectedTotal : null;
         _parts = formatSelector.Split('+');
         _sizes = new long?[_parts.Count];
         _done = new long[_parts.Count];
@@ -48,8 +51,29 @@ public sealed class YtDlpProgressTracker
 
     public long Received => _done.Sum();
 
-    /// <summary>All parts' sizes added up, when each is known.</summary>
-    public long? Total => _sizes.All(s => s is not null) ? _sizes.Sum(s => s!.Value) : null;
+    /// <summary>
+    /// The download's size: all parts' sizes once each is known (yt-dlp reports a part's size when it starts it). Before
+    /// that, the picker's figure stands in, never less than the sizes already known or what has arrived; null when there
+    /// is neither.
+    /// </summary>
+    public long? Total
+    {
+        get
+        {
+            if (_sizes.All(s => s is not null))
+            {
+                return _sizes.Sum(s => s!.Value);
+            }
+
+            if (_expectedTotal is not { } expected)
+            {
+                return null;
+            }
+
+            var known = _sizes.Sum(s => s ?? 0);
+            return Math.Max(expected, Math.Max(known, Received));
+        }
+    }
 
     /// <summary>Reads one output line; true when the figures changed.</summary>
     public bool Read(string? line)

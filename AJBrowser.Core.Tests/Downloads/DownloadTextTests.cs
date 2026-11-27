@@ -54,6 +54,13 @@ public sealed class DownloadTextTests
         Assert.Equal("2 KB", DownloadText.Status(Item(DownloadState.Downloading, 2048), culture: Invariant));
 
     [Fact]
+    public void Downloading_before_the_first_byte_says_starting()
+    {
+        Assert.Equal("Starting…", DownloadText.Status(Item(DownloadState.Downloading, 0), culture: Invariant));
+        Assert.Equal("Starting… · 10 MB", DownloadText.Status(Item(DownloadState.Downloading, 0, 10 * 1024 * 1024), culture: Invariant));
+    }
+
+    [Fact]
     public void Paused_completed_failed_and_others()
     {
         Assert.Equal("Paused · 1 KB of 2 KB", DownloadText.Status(Item(DownloadState.Paused, 1024, 2048), culture: Invariant));

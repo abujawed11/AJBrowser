@@ -116,6 +116,7 @@ public sealed class DownloadManager
             AudioSourceUrl = request.AudioUrl?.AbsoluteUri,
             VideoTrackId = request.VideoTrackId,
             AudioTrackId = request.AudioTrackId,
+            TotalBytes = request.ExpectedBytes is > 0 ? request.ExpectedBytes : null,
             State = DownloadState.Queued,
             SourceUrl = request.Url.AbsoluteUri,
             PageUrl = pageUrl,
@@ -459,7 +460,7 @@ public sealed class DownloadManager
         try
         {
             var audio = Uri.TryCreate(start.AudioSourceUrl, UriKind.Absolute, out var audioUri) ? audioUri : null;
-            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source, audio, start.VideoTrackId, start.AudioTrackId);
+            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source, audio, start.VideoTrackId, start.AudioTrackId, start.TotalBytes);
             result = start.Source switch
             {
                 DownloadSource.File => await _downloader.DownloadAsync(request, start.Resume, progress, token).ConfigureAwait(false),

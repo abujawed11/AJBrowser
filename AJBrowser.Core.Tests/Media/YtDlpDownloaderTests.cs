@@ -46,8 +46,8 @@ public sealed class YtDlpDownloaderTests : IDisposable
 
     private static string After(IReadOnlyList<string> args, string option) => args[args.ToList().IndexOf(option) + 1];
 
-    private static DownloadRequest Request(string target, string? video = "137", string? audio = "140") =>
-        new(Page, target, null, DownloadSource.YtDlp, null, video, audio);
+    private static DownloadRequest Request(string target, string? video = "137", string? audio = "140", long? expected = null) =>
+        new(Page, target, null, DownloadSource.YtDlp, null, video, audio, expected);
 
     [Fact]
     public async Task Downloads_with_progress_cookies_and_the_final_path()
@@ -93,6 +93,21 @@ public sealed class YtDlpDownloaderTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(_root, "temp", "5"))); // temp folder (and cookie file) gone
         Assert.Contains(reports, r => r.ReceivedBytes == 120 && r.TotalBytes == 120);
         Assert.Contains("https://accounts.google.com/", _sessionUrls!.Select(u => u.AbsoluteUri)); // YouTube signs in through Google
+    }
+
+    [Fact]
+    public async Task The_expected_size_is_reported_while_the_sound_part_is_still_unknown()
+    {
+        var reports = new List<DownloadProgress>();
+        _behaviour = (_, onOutput, _) =>
+        {
+            onOutput!("ajb-progress 1000 300000 NA 1000 9 137"); // picture running, sound size unknown
+            File.WriteAllText(Target("e.mp4"), "x");
+            onOutput("ajb-file:" + Target("e.mp4"));
+            return Task.FromResult(new ProcessResult(0, [], []));
+        };
+        await Create().DownloadAsync(1, Request(Target("e.mp4"), expected: 400_000), new SyncProgress(reports.Add), CancellationToken.None);
+        Assert.Equal((1000L, 400_000L), (reports[0].ReceivedBytes, reports[0].TotalBytes!.Value));
     }
 
     [Fact]

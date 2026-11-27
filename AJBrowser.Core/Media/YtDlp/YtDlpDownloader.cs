@@ -214,7 +214,7 @@ public sealed class YtDlpDownloader : IStreamDownloader
         }
 
         var folder = TempFolderFor(jobId);
-        var tracker = new YtDlpProgressTracker(selector);
+        var tracker = new YtDlpProgressTracker(selector, expectedTotal: request.ExpectedBytes);
         var useCookies = NeedsCookies(request.Url);
         try
         {

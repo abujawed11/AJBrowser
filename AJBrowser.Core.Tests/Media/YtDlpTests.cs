@@ -323,6 +323,22 @@ public sealed class YtDlpProgressTests
     }
 
     [Fact]
+    public void The_pickers_size_stands_in_until_every_part_is_known()
+    {
+        // Picture first (exact size known when it starts), sound later: the user still sees a total from the first byte.
+        var tracker = new YtDlpProgressTracker("134+140", expectedTotal: 27_000_000);
+        Assert.Equal(27_000_000, tracker.Total);
+        tracker.Read("ajb-progress 1024 18294110 NA 97590 187 134");
+        Assert.Equal(27_000_000, tracker.Total); // exact picture size known, sound not yet: the estimate covers it
+        tracker.Read("ajb-progress 1024 10271496 NA 64661 158 140");
+        Assert.Equal(18_294_110 + 10_271_496, tracker.Total); // now exact
+
+        var low = new YtDlpProgressTracker("134+140", expectedTotal: 5_000_000); // an estimate that was too low
+        low.Read("ajb-progress 9000000 18294110 NA 97590 100 134");
+        Assert.Equal(18_294_110, low.Total); // never below what's known
+    }
+
+    [Fact]
     public void Learns_part_sizes_from_progress()
     {
         var tracker = new YtDlpProgressTracker("18");
