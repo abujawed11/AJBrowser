@@ -266,7 +266,8 @@ public sealed class FilterEngineService : IDisposable
             lock (_stateLock)
             {
                 _state.TryGetValue(info.Id, out var old);
-                contentChanged = old?.ContentHash != hash || !File.Exists(ListFile(info.Id));
+                contentChanged = old?.ContentHash != hash || !File.Exists(ListFile(info.Id))
+                                 || (old is not null && !FromCurrentAddress(info.Id, old));
             }
 
             if (contentChanged)
@@ -320,7 +321,8 @@ public sealed class FilterEngineService : IDisposable
             return !_state.TryGetValue(id, out var s)
                    || s.NextCheckAt is not { } next
                    || now >= next
-                   || (s.ContentHash is not null && !File.Exists(ListFile(id)));
+                   || (s.ContentHash is not null && !File.Exists(ListFile(id)))
+                   || !FromCurrentAddress(id, s);
         }
     }
 
@@ -330,10 +332,10 @@ public sealed class FilterEngineService : IDisposable
         var lists = new List<FilterListText>();
         foreach (var id in EnabledListIds)
         {
-            if (FilterListCatalog.Find(id) is { } info && File.Exists(ListFile(id)))
+            if (FilterListCatalog.Find(id) is { } info && HasUsableCopy(id))
             {
                 var text = await File.ReadAllTextAsync(ListFile(id), cancellationToken).ConfigureAwait(false);
-                lists.Add(new FilterListText(text, info.ScriptletPermissions));
+                lists.Add(new FilterListText(text, info.ScriptletPermissions, info.HostsFormat));
             }
         }
 
@@ -438,15 +440,34 @@ public sealed class FilterEngineService : IDisposable
             foreach (var id in EnabledListIds)
             {
                 _state.TryGetValue(id, out var s);
-                var hash = s?.ContentHash is { } h && File.Exists(ListFile(id)) ? h : "none";
-                text.Append(id).Append(':').Append(FilterListCatalog.Find(id)?.ScriptletPermissions ?? 0).Append(':').Append(hash).Append('\n');
+                var hash = s?.ContentHash is { } h && File.Exists(ListFile(id)) && FromCurrentAddress(id, s) ? h : "none";
+                var info = FilterListCatalog.Find(id);
+                text.Append(id).Append(':').Append(info?.ScriptletPermissions ?? 0).Append(info?.HostsFormat == true ? ":hosts" : "")
+                    .Append(':').Append(hash).Append('\n');
             }
         }
 
         return Hash(text.ToString());
     }
 
-    private bool HasAnyEnabledContent() => EnabledListIds.Any(id => File.Exists(ListFile(id)));
+    private bool HasAnyEnabledContent() => EnabledListIds.Any(HasUsableCopy);
+
+    /// <summary>A saved copy exists and came from one of the list's current addresses.</summary>
+    private bool HasUsableCopy(string id)
+    {
+        lock (_stateLock)
+        {
+            return File.Exists(ListFile(id)) && (!_state.TryGetValue(id, out var s) || FromCurrentAddress(id, s));
+        }
+    }
+
+    /// <summary>
+    /// False when the saved copy was downloaded from an address the catalogue no longer lists (for example Peter Lowe's
+    /// list, moved from "adblock" to hosts format): that copy may be in the wrong format, so it isn't used and the list
+    /// is downloaded again at the next check. Copies without a recorded address are trusted.
+    /// </summary>
+    private static bool FromCurrentAddress(string id, ListState s) =>
+        s.SourceUrl is null || FilterListCatalog.Find(id) is not { } info || info.Urls.Contains(s.SourceUrl, StringComparer.OrdinalIgnoreCase);
 
     private string ListFile(string id) => Path.Combine(_listsFolder, id + ".txt");
 

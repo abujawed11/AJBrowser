@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **922 passing tests**.
+   - Test Explorer: expect **924 passing tests**.
    - Rust is **not** needed to build: the ad-block engine DLL is committed (`AJBrowser.Core/Native/adblock_shim.dll`). Only to change `native/adblock-shim/` install Rust (GNU toolchain) as its README says.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
@@ -224,6 +224,8 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 4. **New with 8c, please check:** "Sign in with Google" popups and links that open a new tab still work with AJBrowser's engine (the first visit to a site is restarted a few ms after it begins, plan F29; you shouldn't notice anything).
 5. Switch back to **uBlock Origin Lite** → still blocks (its "Ad blocker settings" link works again).
 6. If a site breaks only with AJBrowser's engine, tell the agent the address (per-site off comes with 8d).
+
+**Fixed after your report:** superadblocktest.com (and any site whose address contains "t.co", e.g. reddit.com, microsoft.com) lost its styles with AJBrowser's engine. Peter Lowe's list had been downloaded in a format where `t.co` matched anywhere in an address; it's now read as a hosts list like uBO does. Your saved copy is left out at the next start and downloaded again ~30 s later, nothing to do. Please reopen superadblocktest.com once.
 
 Known 8c limits: the first time a site appears *inside a frame* it gets no scriptlets (the next page has them); uBO's "procedural" hiding rules (`:has-text()`…) aren't applied yet; open tabs only switch engines after a reload.
 

@@ -395,6 +395,52 @@ public sealed class FilterEngineServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Peter_Lowes_list_is_read_as_a_hosts_file()
+    {
+        // Its "adblock" format was bare names: "t.co" then matched inside superadblocktest.com, reddit.com… (8c bug report).
+        var peterLowe = FilterListCatalog.Find("peter-lowe")!;
+        Assert.True(peterLowe.HostsFormat);
+        Assert.All(peterLowe.Urls, url => Assert.DoesNotContain("hostformat=adblock", url));
+        _server.Set(peterLowe.Urls[0], "# Peter Lowe\n127.0.0.1 t.co\n127.0.0.1 ads.test\n");
+
+        var service = Create();
+        await service.InitializeAsync(["peter-lowe"]);
+        await service.UpdateAsync(force: false);
+
+        Assert.True(Blocks(service, "t.co"));
+        Assert.True(Blocks(service, "sub.ads.test"));
+        Assert.False(Blocks(service, "superadblocktest.com"));
+        Assert.False(Blocks(service, "www.reddit.com"));
+    }
+
+    [Fact]
+    public async Task A_saved_copy_from_an_address_no_longer_listed_is_dropped_and_downloaded_again()
+    {
+        var peterLowe = FilterListCatalog.Find("peter-lowe")!;
+        _server.Set(peterLowe.Urls[0], "127.0.0.1 ads.test\n");
+        var first = Create();
+        await first.InitializeAsync(["peter-lowe"]);
+        await first.UpdateAsync(force: false);
+        first.Dispose();
+
+        // Make it look like a copy from before the fix: the old "adblock" address and its bare-name format.
+        var stateFile = Path.Combine(Filters, "lists", "state.json");
+        File.WriteAllText(stateFile, File.ReadAllText(stateFile).Replace("hostformat=hosts", "hostformat=adblock"));
+        File.WriteAllText(Path.Combine(Filters, "lists", "peter-lowe.txt"), "[Adblock]\nt.co\n");
+        var requests = _server.Requests.Count;
+
+        var service = Create();
+        await service.InitializeAsync(["peter-lowe"]);
+        Assert.False(Blocks(service, "superadblocktest.com")); // the old copy isn't used, not even until the next check
+        Assert.Equal(requests, _server.Requests.Count);
+
+        var summary = await service.UpdateAsync(force: false); // not expired, but due because of the old address
+        Assert.Equal(1, summary.Checked);
+        Assert.True(Blocks(service, "ads.test"));
+        Assert.False(Blocks(service, "superadblocktest.com"));
+    }
+
+    [Fact]
     public async Task Lists_are_only_checked_again_after_they_expire()
     {
         var service = Create();

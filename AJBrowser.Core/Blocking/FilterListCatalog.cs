@@ -8,6 +8,9 @@ namespace AJBrowser.Core.Blocking;
 /// <param name="Trusted">May use uBO's <c>trusted-*</c> scriptlets: only uBlock Origin's own lists, as in uBO.</param>
 /// <param name="DefaultEnabled">On for new users.</param>
 /// <param name="Homepage">Project page, for attribution.</param>
+/// <param name="HostsFormat">The list is a hosts file (<c>127.0.0.1 ads.example</c>): each name blocks exactly that
+/// site and its subdomains. (Bare names in ad-block syntax match anywhere in an address instead: <c>t.co</c> would block
+/// every "…t.com" site.)</param>
 public sealed record FilterListInfo(
     string Id,
     string Title,
@@ -15,7 +18,8 @@ public sealed record FilterListInfo(
     IReadOnlyList<string> Urls,
     bool Trusted,
     bool DefaultEnabled,
-    string Homepage)
+    string Homepage,
+    bool HostsFormat = false)
 {
     public byte ScriptletPermissions => Trusted ? FilterListText.TrustedScriptlets : (byte)0;
 }
@@ -52,9 +56,11 @@ public static class FilterListCatalog
             ["https://easylist.to/easylist/easyprivacy.txt", "https://ublockorigin.github.io/uAssets/thirdparties/easyprivacy.txt"],
             Trusted: false, DefaultEnabled: true, "https://easylist.to/"),
         new("peter-lowe", "Peter Lowe's Ad and tracking server list", "A long-standing list of ad and tracking servers.",
-            ["https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblock&showintro=1&mimetype=plaintext",
-             "https://ublockorigin.github.io/uAssets/thirdparties/pgl.yoyo.org/as/serverlist.txt"],
-            Trusted: false, DefaultEnabled: true, "https://pgl.yoyo.org/adservers/"),
+            // Hosts format, as uBO uses it. The "adblock" format is bare names ("t.co"), which adblock-rust reads as
+            // patterns matching anywhere in an address (it broke superadblocktest.com, reddit.com…).
+            ["https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext",
+             "https://cdn.jsdelivr.net/gh/uBlockOrigin/uAssets@latest/thirdparties/pgl.yoyo.org/as/serverlist"],
+            Trusted: false, DefaultEnabled: true, "https://pgl.yoyo.org/adservers/", HostsFormat: true),
         new("easylist-cookie", "EasyList Cookie Notices", "Hides cookie banners (may break a few sites' consent pop-ups).",
             ["https://secure.fanboy.co.nz/fanboy-cookiemonster.txt", "https://easylist-downloads.adblockplus.org/fanboy-cookiemonster.txt"],
             Trusted: false, DefaultEnabled: false, "https://easylist.to/"),
