@@ -93,6 +93,19 @@
                         </StackPanel>
                     </DockPanel>
                     <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
+                    <StackPanel DataContext="{Binding AdBlock}">
+                        <TextBlock Text="Ad-block engine" FontWeight="SemiBold" />
+                        <TextBlock Text="Only one runs at a time. Switching reloads the current page; other tabs change when they reload."
+                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        <RadioButton GroupName="AdBlockEngine" Margin="0,8,0,0" IsChecked="{Binding IsUBlockOriginLiteEngine}"
+                                     Content="uBlock Origin Lite (extension; rules update with AJBrowser releases)" />
+                        <RadioButton GroupName="AdBlockEngine" Margin="0,8,0,0" IsChecked="{Binding IsOwnEngine}"
+                                     IsEnabled="{Binding IsOwnEngineSupported}"
+                                     Content="AJBrowser's engine (uBlock Origin's filter lists, updated automatically)" />
+                        <TextBlock Text="{Binding EngineStatus}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                   FontSize="{StaticResource CaptionFontSize}" Style="{StaticResource SecondaryTextStyle}" />
+                    </StackPanel>
+                    <Border Height="1" Margin="0,12" Background="{DynamicResource ChromeBorderBrush}" />
                     <DockPanel>
                         <Button DockPanel.Dock="Right" Content="Clear browsing data…" Command="{Binding OpenHistoryCommand}" VerticalAlignment="Center" />
                         <StackPanel>

@@ -307,7 +307,7 @@ public sealed class FilterListDownloaderTests : IDisposable
     {
         _server.Set(Main, $"!#include {include}\n||main.test^");
         await Assert.ThrowsAsync<FilterListDownloadException>(() => _downloader.DownloadAsync(List(Main)));
-        Assert.Equal(1, _server.Requests.Count);
+        Assert.Single(_server.Requests);
     }
 
     [Fact]

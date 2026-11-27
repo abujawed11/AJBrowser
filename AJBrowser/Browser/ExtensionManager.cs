@@ -18,6 +18,11 @@ namespace AJBrowser.Browser;
 /// <see cref="BrowserTab"/> calls <see cref="PrepareAsync"/> once its WebView exists. The real work runs once.
 /// Failures never stop browsing: the log says why and tracking prevention still works.
 /// </para>
+/// <para>
+/// Since Phase 8c it doesn't own the on/off choice: <see cref="AdBlockService"/> decides whether uBO Lite should run
+/// (the global switch is on and uBO Lite is the chosen engine) and this class makes the profile match. It is installed
+/// even while AJBrowser's own engine is chosen, but stays disabled, so switching back is instant.
+/// </para>
 /// </summary>
 public sealed class ExtensionManager
 {
@@ -37,6 +42,7 @@ public sealed class ExtensionManager
     private readonly string _installFolder;
     private readonly string _stateFile;
     private readonly AppLogger _log;
+    private readonly Func<bool> _shouldRun;
 
     private AdBlockerState _state = new();
     private CoreWebView2Profile? _profile;
@@ -45,8 +51,10 @@ public sealed class ExtensionManager
 
     /// <param name="bundleFolder">Folder next to the exe that holds the bundled zip.</param>
     /// <param name="extensionsRoot">Per-user extensions folder (<c>AppPaths.Extensions</c>).</param>
-    public ExtensionManager(string bundleFolder, string extensionsRoot, AppLogger log)
+    /// <param name="shouldRun">Whether uBO Lite should be enabled right now (global switch on and uBO Lite chosen).</param>
+    public ExtensionManager(string bundleFolder, string extensionsRoot, AppLogger log, Func<bool> shouldRun)
     {
+        _shouldRun = shouldRun;
         _bundleFolder = bundleFolder;
         _installFolder = Path.Combine(extensionsRoot, "uBOLite");
         _stateFile = Path.Combine(_installFolder, "state.json");
@@ -56,8 +64,15 @@ public sealed class ExtensionManager
     /// <summary>The ad blocker is installed and can be switched on and off.</summary>
     public bool IsAvailable { get; private set; }
 
-    /// <summary>The user's choice (on by default). Only takes effect while <see cref="IsAvailable"/>.</summary>
-    public bool IsEnabled => _state.Enabled;
+    /// <summary>uBO Lite is enabled in the profile (blocking), as far as AJBrowser last set it.</summary>
+    public bool IsEnabled => IsAvailable && _state.Enabled;
+
+    /// <summary>
+    /// The on/off choice saved by AJBrowser before Phase 8c (in uBO Lite's state file), to carry it over into settings
+    /// once. True when there's no file.
+    /// </summary>
+    public static bool ReadSavedChoice(string extensionsRoot) =>
+        AdBlockerState.Load(Path.Combine(extensionsRoot, "uBOLite", "state.json")).Enabled;
 
     /// <summary>The installed version, for display (for example "2026.1124.1811").</summary>
     public string? Version => IsAvailable ? _state.Version : null;
@@ -71,8 +86,8 @@ public sealed class ExtensionManager
 
     /// <summary>
     /// Called by every new WebView before its first navigation, on the UI thread. The first call starts the setup;
-    /// the first WebViews wait for it (up to <see cref="FirstPageWaitLimit"/>) so their pages are already ad-free.
-    /// Later calls return at once. Never throws.
+    /// while uBO Lite should run, the first WebViews wait for it (up to <see cref="FirstPageWaitLimit"/>) so their pages
+    /// are already ad-free. Later calls return at once. Never throws.
     /// </summary>
     public Task PrepareAsync(CoreWebView2 core)
     {
@@ -88,13 +103,27 @@ public sealed class ExtensionManager
         }
 
         _setup ??= SetUpAsync(_profile);
+        if (!_shouldRun())
+        {
+            return Task.CompletedTask; // installs (disabled) in the background; nothing for pages to wait for
+        }
+
         return _firstWait ??= WaitForFirstSetupAsync(_setup);
     }
 
-    /// <summary>Turns ad blocking on or off and remembers the choice. Never throws; problems are logged.</summary>
-    public async Task SetEnabledAsync(bool enabled)
+    /// <summary>
+    /// Makes the profile match "should uBO Lite run?" after the switch or the engine choice changed. Before the setup
+    /// has run, the setup applies it. Never throws; problems are logged.
+    /// </summary>
+    public async Task ApplyAsync()
     {
-        if (!IsAvailable || _profile is null || _state.ExtensionId is null)
+        if (_setup is { IsCompleted: false } setup)
+        {
+            await setup; // it reads _shouldRun() itself, but may have read it before the change
+        }
+
+        var enabled = _shouldRun();
+        if (!IsAvailable || _profile is null || _state.ExtensionId is null || _state.Enabled == enabled)
         {
             return;
         }
@@ -112,7 +141,7 @@ public sealed class ExtensionManager
                 await extension.EnableAsync(enabled);
                 _state = _state with { Enabled = enabled };
                 SaveState();
-                _log.Info($"Ad blocking turned {(enabled ? "on" : "off")}");
+                _log.Info($"{ExtensionName} turned {(enabled ? "on" : "off")}");
             }
         }
         catch (Exception ex)
@@ -186,10 +215,17 @@ public sealed class ExtensionManager
                 }
             }
 
-            // Make the profile match the remembered choice (also covers a reinstall, which starts enabled).
-            if (installed!.IsEnabled != _state.Enabled)
+            // Make the profile match the current choice (also covers a reinstall, which starts enabled).
+            var shouldRun = _shouldRun();
+            if (installed!.IsEnabled != shouldRun)
             {
-                await installed.EnableAsync(_state.Enabled);
+                await installed.EnableAsync(shouldRun);
+            }
+
+            if (_state.Enabled != shouldRun)
+            {
+                _state = _state with { Enabled = shouldRun };
+                SaveState();
             }
 
             IsAvailable = true;

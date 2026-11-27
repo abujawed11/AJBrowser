@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 built (YouTube downloaded from the picker by the agent) · Phase 8 (own ad-block engine) 🔶 in progress: 8a + 8b done (Core only) · next: 8c**
+**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 built (YouTube downloaded from the picker by the agent) · Phase 8 (own ad-block engine) 🔶 in progress: 8a + 8b + 8c done (8c: in the browser, with the engine switch in Settings) · next: 8d**
 
 ---
 
@@ -42,10 +42,12 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **881 passing tests**.
+   - Test Explorer: expect **922 passing tests**.
    - Rust is **not** needed to build: the ad-block engine DLL is committed (`AJBrowser.Core/Native/adblock_shim.dll`). Only to change `native/adblock-shim/` install Rust (GNU toolchain) as its README says.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
+   - Settings → Privacy → **Ad-block engine** picks uBlock Origin Lite (default) or AJBrowser's own engine; the first switch to AJBrowser's engine downloads its filter lists (about 3 s).
+   - Debug builds only: set the environment variable `AJBROWSER_DATA_DIR` to a folder to run a test copy on separate data (settings, history, WebView2 profile) next to your normal one.
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
 4. **Per-PC data:** the app stores data in `%LOCALAPPDATA%\AJBrowser\` (`Data\ajbrowser.db` = history, bookmarks, session; `Data\settings.json`; logs, WebView2 profile, unpacked ad blocker, spike reports). That folder isn't in git, so a new PC starts empty, which is expected.
 
@@ -73,7 +75,12 @@ AJBrowser/                   WPF app (net10.0-windows)
   Browser/BrowserEnvironment.cs  shared CoreWebView2Environment (lazy, recreatable), runtime check, profile "Default",
                              AreBrowserExtensionsEnabled = true
   Browser/ExtensionManager.cs    ad blocker: unpack bundled uBO Lite zip → install/upgrade in profile once per start,
-                             on/off (state.json), settings page URL; every new WebView awaits PrepareAsync first
+                             (8c) enabled only while AdBlockService says it should run; settings page URL
+  Browser/AdBlockService.cs  (8c) which ad blocker runs (setting) + global switch; starts AJBrowser's engine on demand
+                             (saved engine, list downloads, hourly checks); every new WebView awaits PrepareAsync first
+  Browser/RequestBlocker.cs  (8c) per tab: request filter while AJBrowser's engine is active, block/redirect, restarts the
+                             first visit to a site so its scripts are in place (plan F29)
+  Browser/CosmeticInjector.cs (8c) per tab: per-host scriptlet + hiding scripts (last 24 hosts), generic-hiding messages
   Extensions/uBOLite_2026.1124.1811.chromium.zip  official release, unmodified (GPLv3), copied to output
   Browser/BrowserTab.cs      wraps one WebView2: Configure() = ALL per-WebView setup, navigation, crash recovery,
                              popups, favicon, zoom, find, fullscreen, context menu
@@ -126,7 +133,8 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
                              FilterListText, FilterDecision, CosmeticResources;
                              (8b) FilterListCatalog (uBO's default lists + mirrors), FilterListPreprocessor (!#if/!#include,
                              Expires), FilterListDownloader (conditional GET, raw cache, includes), FilterEngineService
-                             (saved engine, background updates, atomic swap), BlockingPolicy (global + per-site off)
+                             (saved engine, background updates, atomic swap), BlockingPolicy (global + per-site off);
+                             (8c) CosmeticScripts (page scripts + message checks), RedirectResource
   Persistence/SiteSettingsRepository.cs (8b) sites with ad blocking off; schema v7
   Infrastructure/AppPaths.cs %LOCALAPPDATA%\AJBrowser\{WebView2,Data,Filters,Extensions,Logs,Temp,Tools}
   AdBlocking/                ExtensionVersion, ExtensionPackage (read zip manifest, unpack, clean old),
@@ -185,7 +193,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 6 HLS streams | 🔶 Built | **6a** Core HLS logic; **6b** download engine (checked on a local stream); **6c** quality list with size estimates, one row per video, separate sound merged when FFmpeg is set. **Agent check with real public streams:** Apple's sample listed its 24 qualities; Mux's "Big Buck Bunny" downloaded at 184p into a valid H.264/AAC `.ts`. 555 tests. **You:** try a site; with FFmpeg set, check that sound gets merged (not tested by the agent, no FFmpeg here). |
 | 7 DASH | 🔶 In progress | **7a** Core: manifest parsing (all four ways DASH lists pieces), DRM/live/multi-period refusal, audio-track choice, container, labels. **7b** download engine (shared with HLS; DB migration v6); agent check on real public streams: 5 manifests read correctly, Big Buck Bunny 180p and a VP9 whole-file track downloaded into valid MP4/WebM files. Also fixed: a deleted FFmpeg made stream downloads fail instead of saving the picture. **7c** picker: quality list + sound-track list for DASH rows, merge note. **Agent check in the real app with your FFmpeg 9.1:** a public DASH stream listed 10 qualities and 10 sound tracks; VP9 + automatic sound → WebM with English Opus, H.264 + automatic → MP4 with English AAC, H.264 + German chosen → MP4 with German sound (all checked with ffprobe). 644 tests. **You:** try a site with a DASH player. |
 | 7.5 yt-dlp | 🔶 Built | **7.5a** Core (installer, quality rows, arguments, progress, errors, cookie file). **7.5b** download engine + Settings (switch with notice, auto-update, Install/Update/Choose for yt-dlp, Deno, FFmpeg). **7.5c** the film button on YouTube, Facebook, Instagram, TikTok, X, Vimeo, Reddit, Twitch, Dailymotion, Bilibili video pages, the yt-dlp row (qualities, sound, fix buttons), "Try yt-dlp on this page", right-click entry. **Agent check in the real app on YouTube:** installed yt-dlp and Deno from the picker, listed 2160p…144p, downloaded 144p with sound; killed AJBrowser mid-download → no yt-dlp left (V17); resumed after restart → finished. Found and fixed on the way: cookies broke public YouTube videos (now only sent when a site asks for sign-in), and older code logged tokens in download addresses. 772 tests. **You:** the Phase 7.5c quick try below (other sites, sign-in, sound languages). |
-| 8 Own ad-block engine | 🔶 In progress | Your choices: Rust GNU toolchain, keep uBO Lite **and** the new engine, switchable; F16 confirmed caused by uBO Lite. **8a** done: Rust add-on around Brave's adblock-rust, C# wrapper, uBO scriptlet file (generated with your permission), 33 tests (820 total). Measured on real lists: builds in 0.45 s, loads from its saved file in 4 ms, p99 under 40 µs per request; YouTube gets 32 scriptlet calls. **8b** done: uBO's default list set with mirrors, `!#if`/`!#include` handling, conditional downloads, saved engine, background updates with last-good fallback, per-site off (DB migration v7), 61 tests (881 total). Checked against the real servers: first download + build 2.6 s, restart loads in 43 ms without network. Next: 8c browser hookup + switch, 8d UI. Nothing visible in the app yet. |
+| 8 Own ad-block engine | 🔶 In progress | Your choices: Rust GNU toolchain, keep uBO Lite **and** the new engine, switchable; F16 confirmed caused by uBO Lite. **8a** done: Rust add-on around Brave's adblock-rust, C# wrapper, uBO scriptlet file (generated with your permission), 33 tests (820 total). Measured on real lists: builds in 0.45 s, loads from its saved file in 4 ms, p99 under 40 µs per request; YouTube gets 32 scriptlet calls. **8b** done: uBO's default list set with mirrors, `!#if`/`!#include` handling, conditional downloads, saved engine, background updates with last-good fallback, per-site off (DB migration v7), 61 tests (881 total). Checked against the real servers: first download + build 2.6 s, restart loads in 43 ms without network. **8c** done: request blocking, scriptlets, element hiding, Settings → "Ad-block engine" (uBO Lite / AJBrowser), one switch for both; 41 tests (922 total). Checked by the agent in a separate test copy: YouTube's ad data removed by the scriptlets on the first visit, news sites get their hiding rules, switch on/off works. Next: 8d UI (count, per-site, lists). |
 | 9–10 | Not started | |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
@@ -205,11 +213,21 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: Phase 8c
+## 6. Next task: Phase 8d (and your quick try of 8c)
 
-**8b done (Core only).** Lists download from uBO's and EasyList's servers (with mirrors), update in the background per each list's own schedule (quick fixes every 8 h, most every 4–5 days), keep the last good copy when a download fails, and the compiled engine is saved so a start loads it in ~40 ms. Per-site "off" is stored in the database (migration v7 runs by itself at the next start; it only adds an empty table). **Nothing to check in the app** (not wired in yet); optional: Test Explorer → 881 tests pass.
+**8c done:** AJBrowser's own engine now works in the browser. Choose it in **Settings → Privacy → Ad-block engine → "AJBrowser's engine"** (uBlock Origin Lite stays the default; only one runs at a time, uBO Lite is just switched off, not removed).
 
-**8c next:** hook the engine into WebView2: block requests, inject scriptlets before page scripts, hide elements; and the Settings switch "Ad-block engine: uBlock Origin Lite / AJBrowser" (only one runs at a time). That's the first part you can try in the browser (YouTube without ads and without the "Experiencing interruptions?" notice, F16).
+**Your quick try of 8c** (the agent checked 1–3 in a separate test copy, not in your normal AJBrowser):
+1. Settings → Privacy → pick **AJBrowser's engine** → the line below says "Downloading filter lists…", then e.g. "8 filter lists, 176,282 rules, updated …". The shield stays green.
+2. **YouTube:** play several videos (also after typing a new youtube.com address): no ads, and please watch whether **"Experiencing interruptions?" (F16) is gone**.
+3. A news site (cnn.com, theverge.com…): ad boxes gone, page works. Shield → Block ads off → the page reloads with ads; on → gone again.
+4. **New with 8c, please check:** "Sign in with Google" popups and links that open a new tab still work with AJBrowser's engine (the first visit to a site is restarted a few ms after it begins, plan F29; you shouldn't notice anything).
+5. Switch back to **uBlock Origin Lite** → still blocks (its "Ad blocker settings" link works again).
+6. If a site breaks only with AJBrowser's engine, tell the agent the address (per-site off comes with 8d).
+
+Known 8c limits: the first time a site appears *inside a frame* it gets no scriptlets (the next page has them); uBO's "procedural" hiding rules (`:has-text()`…) aren't applied yet; open tabs only switch engines after a reload.
+
+**8d next:** shield with the blocked count, "Blocking on this site" toggle, Settings: filter lists (on/off, last updated, Update now), allowlist, tracking prevention level, list credits; DEBUG timing histogram; F16 check.
 
 ### Done in 8a
 
@@ -361,7 +379,7 @@ Report anything odd, and the agent will fix it before Phase 4.
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 8 with 8c (or: fix what I found while testing Phase 7.5).
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 8 with 8d (or: fix what I found while trying 8c).
 
 ## 7. uBlock Origin Lite test (V5): done
 

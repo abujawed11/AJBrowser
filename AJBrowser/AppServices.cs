@@ -33,10 +33,18 @@ public sealed class AppServices : IDisposable
         DatabaseResult = databaseResult;
 
         Browser = new BrowserEnvironment(paths.WebView2UserData, CreateLogger(nameof(BrowserEnvironment)));
-        Extensions = new ExtensionManager(
-            Path.Combine(AppContext.BaseDirectory, "Extensions"),
-            paths.Extensions,
-            CreateLogger(nameof(ExtensionManager)));
+        // Ad blocking (Phase 2.5 + 8c): uBO Lite or AJBrowser's own engine, one switch for both.
+        AdBlocker = new AdBlockService(
+            settings,
+            new Core.Blocking.BlockingPolicy(new SiteSettingsRepository(database)),
+            shouldRun => new ExtensionManager(
+                Path.Combine(AppContext.BaseDirectory, "Extensions"),
+                paths.Extensions,
+                CreateLogger(nameof(ExtensionManager)),
+                shouldRun),
+            () => CreateFilterEngineService(paths),
+            ExtensionManager.ReadSavedChoice(paths.Extensions),
+            CreateLogger(nameof(AdBlockService)));
         AddressResolver = new UrlOrSearchResolver(SearchEngines.TemplateFor(settings.Current));
         History = new HistoryService(new HistoryRepository(database), CreateLogger(nameof(HistoryService)));
         Bookmarks = new BookmarkService(new BookmarkRepository(database), CreateLogger(nameof(BookmarkService)));
@@ -108,8 +116,8 @@ public sealed class AppServices : IDisposable
     /// <summary>The shared WebView2 environment (created lazily when the first tab starts).</summary>
     public BrowserEnvironment Browser { get; }
 
-    /// <summary>The bundled ad blocker (uBlock Origin Lite), installed when the first tab starts.</summary>
-    public ExtensionManager Extensions { get; }
+    /// <summary>Ad blocking: the bundled uBlock Origin Lite (installed when the first tab starts) or AJBrowser's own engine.</summary>
+    public AdBlockService AdBlocker { get; }
 
     public UrlOrSearchResolver AddressResolver { get; }
     public HistoryService History { get; }
@@ -158,7 +166,15 @@ public sealed class AppServices : IDisposable
     /// </summary>
     public static AppServices Create(Application app)
     {
+#if DEBUG
+        // Debug builds only: AJBROWSER_DATA_DIR runs AJBrowser on a separate data folder (settings, history, WebView2
+        // profile…), so a test copy can run next to your normal one without touching its data.
+        var paths = Environment.GetEnvironmentVariable("AJBROWSER_DATA_DIR") is { Length: > 0 } dataDir
+            ? new AppPaths(dataDir)
+            : AppPaths.CreateDefault();
+#else
         var paths = AppPaths.CreateDefault();
+#endif
         paths.EnsureCreated();
 
         var logSink = new FileLogSink(paths.Logs)
@@ -193,7 +209,7 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Creates a tab (WebView wrapper + its view model). Not started yet: call <see cref="TabViewModel.StartAsync"/>.</summary>
     public TabViewModel CreateTab() =>
-        new(new BrowserTab(Browser, Extensions, DownloadInterceptor, Theme, () => Settings.Current.DetectVideos, CreateLogger(nameof(BrowserTab)), () => Settings.Current.YtDlpEnabled), _tabServices);
+        new(new BrowserTab(Browser, AdBlocker, DownloadInterceptor, Theme, () => Settings.Current.DetectVideos, CreateLogger(nameof(BrowserTab)), () => Settings.Current.YtDlpEnabled), _tabServices);
 
     /// <summary>Creates the view model of an internal page for the tab that will show it.</summary>
     private IInternalPage CreatePage(InternalPage page, IPageHost host) => page switch
@@ -224,6 +240,34 @@ public sealed class AppServices : IDisposable
         DownloadManager.MaxConcurrent = current.MaxConcurrentDownloads;
     }
 
+    /// <summary>AJBrowser's own engine's lists and compiled engine (Phase 8b), with uBO's scriptlets shipped next to the exe.
+    /// Runs on a worker thread, the first time that engine is needed.</summary>
+    private Core.Blocking.FilterEngineService CreateFilterEngineService(AppPaths paths)
+    {
+        var log = CreateLogger("FilterLists");
+        string? resources = null;
+        var resourcesFile = Path.Combine(AppContext.BaseDirectory, "Filters", "ubo-resources.json");
+        try
+        {
+            resources = File.ReadAllText(resourcesFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.Warn("uBO's scriptlet file is missing next to AJBrowser: network blocking works, YouTube's ads won't be removed", ex);
+        }
+
+        var http = new System.Net.Http.HttpClient(new System.Net.Http.SocketsHttpHandler { UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All })
+        {
+            Timeout = TimeSpan.FromSeconds(60),
+        };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"AJBrowser/{typeof(AppServices).Assembly.GetName().Version?.ToString(3) ?? "0"}");
+        return new Core.Blocking.FilterEngineService(
+            new Core.Blocking.FilterListDownloader(http, Path.Combine(paths.Filters, "raw")),
+            paths.Filters,
+            resources,
+            log);
+    }
+
     /// <summary>"Ask where to save": a Save dialog over the main window. Returns the chosen path, or null if cancelled.</summary>
     private static string? AskSavePath(string folder, string suggestedName)
     {
@@ -252,6 +296,7 @@ public sealed class AppServices : IDisposable
     public void Dispose()
     {
         Settings.Changed -= OnSettingsChanged;
+        AdBlocker.Dispose();
         Downloads.Dispose();
         DownloadInterceptor.Dispose();
         Theme.Dispose();

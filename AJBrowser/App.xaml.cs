@@ -43,7 +43,7 @@ public partial class App : Application
                 _services.Paths,
                 _services.Settings,
                 _services.Shell,
-                _services.Extensions,
+                _services.AdBlocker,
                 _services.Bookmarks,
                 _services.Favicons,
                 _services.Session,
@@ -58,6 +58,7 @@ public partial class App : Application
             var window = new MainWindow(_mainViewModel);
             MainWindow = window;
             window.Show();
+            _services.AdBlocker.Start(); // AJBrowser's own engine, when chosen: loads its saved engine, then checks lists
 
             if (_services.DatabaseResult.RecreatedAfterCorruption)
             {

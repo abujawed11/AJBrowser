@@ -53,7 +53,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         AppPaths paths,
         SettingsStore settings,
         ShellService shell,
-        ExtensionManager adBlocker,
+        AdBlockService adBlocker,
         BookmarkService bookmarks,
         FaviconService favicons,
         SessionService session,

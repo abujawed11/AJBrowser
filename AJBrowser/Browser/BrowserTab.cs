@@ -30,7 +30,8 @@ public sealed class BrowserTab : IDisposable
     private const string OpenLinkInNewWindowItemName = "openLinkInNewWindow";
 
     private readonly BrowserEnvironment _environment;
-    private readonly ExtensionManager _extensions;
+    private readonly AdBlockService _adBlock;
+    private readonly RequestBlocker _blocker;
     private readonly DownloadInterceptor _downloads;
     private readonly ThemeService _theme;
     private readonly AppLogger _log;
@@ -49,11 +50,12 @@ public sealed class BrowserTab : IDisposable
     private bool _disposed;
 
     /// <param name="ytDlpEnabled">Settings → "Big video sites (yt-dlp)": adds "Download video with yt-dlp" to the page's right-click menu.</param>
-    public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, DownloadInterceptor downloads, ThemeService theme, Func<bool> detectVideos, AppLogger log, Func<bool>? ytDlpEnabled = null)
+    public BrowserTab(BrowserEnvironment environment, AdBlockService adBlock, DownloadInterceptor downloads, ThemeService theme, Func<bool> detectVideos, AppLogger log, Func<bool>? ytDlpEnabled = null)
     {
         _ytDlpEnabled = ytDlpEnabled ?? (() => false);
         _environment = environment;
-        _extensions = extensions;
+        _adBlock = adBlock;
+        _blocker = new RequestBlocker(adBlock, log);
         _downloads = downloads;
         _theme = theme;
         _log = log;
@@ -84,6 +86,9 @@ public sealed class BrowserTab : IDisposable
 
     /// <summary>For <see cref="PopupRequest"/> only: the live CoreWebView2 to hand to WebView2 as a new window.</summary>
     internal CoreWebView2? Core => _core;
+
+    /// <summary>Requests AJBrowser's own ad-block engine blocked on the current page (0 with uBO Lite).</summary>
+    public int AdsBlocked => _blocker.BlockedCount;
 
     /// <summary>Videos and streams found on the current page (Phase 5).</summary>
     public Core.Media.TabMediaStore Media => _media.Store;
@@ -241,6 +246,7 @@ public sealed class BrowserTab : IDisposable
         _media.Changed -= OnMediaChanged;
         DetachWebView(keepForDownloads: true);
         _media.Dispose();
+        _blocker.Dispose();
     }
 
     /// <summary>
@@ -344,9 +350,9 @@ public sealed class BrowserTab : IDisposable
         Configure(webView, _core);
         _environment.RememberProfile(_core.Profile, _core.Settings.UserAgent);
 
-        // The ad blocker must be installed before the first page loads, or that page still shows ads.
-        // Only the first WebViews actually wait (a few seconds on the very first run); never throws.
-        await _extensions.PrepareAsync(_core);
+        // The ad blocker must be ready before the first page loads, or that page still shows ads: uBO Lite installed,
+        // or AJBrowser's saved engine loaded. Only the first WebViews actually wait; never throws.
+        await _adBlock.PrepareAsync(_core);
         if (_disposed || !ReferenceEquals(_webView, webView))
         {
             return;
@@ -391,6 +397,7 @@ public sealed class BrowserTab : IDisposable
         _downloads.Attach(core);
         core.DownloadStarting += OnDownloadStartingInTab; // after the interceptor's handler
         _media.Attach(core);
+        _blocker.Attach(core, _attachedEnvironment!);
 
         ZoomFactor = webView.ZoomFactor;
         UpdateState(core);
@@ -425,6 +432,7 @@ public sealed class BrowserTab : IDisposable
                 _core.DownloadStarting -= OnDownloadStartingInTab;
                 _downloads.Detach(_core);
                 _media.Detach(_core);
+                _blocker.Detach(_core);
             }
             catch (Exception ex)
             {
@@ -503,7 +511,16 @@ public sealed class BrowserTab : IDisposable
 
         if (!e.IsSuccess)
         {
-            _log.Info($"Navigation failed: {e.WebErrorStatus}, HTTP {e.HttpStatusCode}, {Redactor.Url(_currentNavigationUri)}");
+            // Cancelled navigations are normal (Stop, a newer navigation, AJBrowser's ad blocker restarting a first visit).
+            var message = $"Navigation failed: {e.WebErrorStatus}, HTTP {e.HttpStatusCode}, {Redactor.Url(_currentNavigationUri)}";
+            if (e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled)
+            {
+                _log.Debug(message);
+            }
+            else
+            {
+                _log.Info(message);
+            }
 
             if (NavigationErrors.ShouldShowErrorPanel(e.WebErrorStatus, e.HttpStatusCode))
             {

@@ -58,6 +58,27 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Ad_block_engine_and_switch_round_trip_as_text()
+    {
+        var store = SettingsStore.Load(File);
+        Assert.Equal(AdBlockEngineKind.UBlockOriginLite, store.Current.AdBlockEngine);
+        Assert.Null(store.Current.AdBlockEnabled); // not chosen yet: the app carries uBO Lite's old choice over
+
+        store.Update(s => s with { AdBlockEngine = AdBlockEngineKind.AJBrowser, AdBlockEnabled = false });
+
+        Assert.Contains("\"AJBrowser\"", System.IO.File.ReadAllText(File));
+        var reloaded = SettingsStore.Load(File).Current;
+        Assert.Equal(AdBlockEngineKind.AJBrowser, reloaded.AdBlockEngine);
+        Assert.False(reloaded.AdBlockEnabled);
+    }
+
+    [Fact]
+    public void Unknown_ad_block_engine_number_falls_back_to_ublock_origin_lite()
+    {
+        Assert.Equal(AdBlockEngineKind.UBlockOriginLite, (new AppSettings() with { AdBlockEngine = (AdBlockEngineKind)42 }).Normalize().AdBlockEngine);
+    }
+
+    [Fact]
     public void Missing_fields_get_defaults()
     {
         Directory.CreateDirectory(_root);

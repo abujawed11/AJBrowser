@@ -14,6 +14,17 @@ public enum StartupBehavior
     RestoreSession,
 }
 
+/// <summary>Which ad blocker runs (Phase 8c). Never both at once.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<AdBlockEngineKind>))]
+public enum AdBlockEngineKind
+{
+    /// <summary>The bundled uBlock Origin Lite extension (Phase 2.5); the default.</summary>
+    UBlockOriginLite,
+
+    /// <summary>AJBrowser's own engine: adblock-rust with uBlock Origin's filter lists and scriptlets (Phase 8).</summary>
+    AJBrowser,
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter<ThemeSetting>))]
 public enum ThemeSetting
 {
@@ -26,7 +37,8 @@ public enum ThemeSetting
 /// User settings, saved as <c>Data\settings.json</c>. Immutable: change them with <c>settings with { … }</c>
 /// through <see cref="SettingsStore.Update"/>. Missing fields in the file get the defaults below, so new settings
 /// can be added without migrating the file.
-/// <para>The ad blocker's on/off switch is not here: it stays with the extension's own state file (decision 2026-11-26, plan §12).</para>
+/// <para>The ad blocker's on/off switch moved here in Phase 8c (<see cref="AdBlockEnabled"/>); before, it lived in the
+/// extension's own state file, which is read once to carry the choice over.</para>
 /// </summary>
 public sealed record AppSettings
 {
@@ -78,6 +90,15 @@ public sealed record AppSettings
     /// Null = the catalogue's defaults (uBlock Origin's default set), so new default lists reach existing users.
     /// </summary>
     public IReadOnlyList<string>? EnabledFilterLists { get; init; }
+
+    /// <summary>Which ad blocker runs (Phase 8c): uBlock Origin Lite (default) or AJBrowser's own engine.</summary>
+    public AdBlockEngineKind AdBlockEngine { get; init; } = AdBlockEngineKind.UBlockOriginLite;
+
+    /// <summary>
+    /// The global "Block ads" switch, for whichever engine runs. Null = not stored yet (settings from before Phase 8c):
+    /// the app then takes uBlock Origin Lite's saved on/off choice once and stores it here.
+    /// </summary>
+    public bool? AdBlockEnabled { get; init; }
 
     /// <summary>Look for videos on pages and offer them in the toolbar (Phase 5). On by default.</summary>
     public bool DetectVideos { get; init; } = true;
@@ -148,6 +169,11 @@ public sealed record AppSettings
         if (!Enum.IsDefined(Startup))
         {
             result = result with { Startup = StartupBehavior.HomePage };
+        }
+
+        if (!Enum.IsDefined(AdBlockEngine))
+        {
+            result = result with { AdBlockEngine = AdBlockEngineKind.UBlockOriginLite };
         }
 
         if (!Enum.IsDefined(Theme))
