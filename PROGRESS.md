@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 built (YouTube downloaded from the picker by the agent) · next: your checks, then Phase 8**
+**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 built (YouTube downloaded from the picker by the agent) · Phase 8 (own ad-block engine) 🔶 in progress: 8a done (one step waits for your OK) · next: 8b**
 
 ---
 
@@ -42,7 +42,8 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **787 passing tests**.
+   - Test Explorer: expect **820 passing tests**.
+   - Rust is **not** needed to build: the ad-block engine DLL is committed (`AJBrowser.Core/Native/adblock_shim.dll`). Only to change `native/adblock-shim/` install Rust (GNU toolchain) as its README says.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -116,7 +117,13 @@ AJBrowser/                   WPF app (net10.0-windows)
   Themes/                    Light.xaml, Dark.xaml (semantic brushes), Shared.xaml (fonts, sizes, ToolbarButtonStyle,
                              SwitchToggleStyle), Pages.xaml (internal page styles)
   Diagnostics/               Phase 0.5 spike, DEBUG ONLY (excluded from Release via csproj)
+native/adblock-shim/         (8a) Rust: C wrapper around Brave's adblock-rust 0.13.6; build.ps1 → AJBrowser.Core/Native/adblock_shim.dll
+tools/ubo-resources/         (8a) generate.mjs: uBO release → scriptlet/redirect resources for adblock-rust
+AJBrowser/Filters/ubo-resources.json  (8a) its output from uBO 1.77.4 (GPLv3), copied to the app's output
 AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
+  Native/adblock_shim.dll    (8a) the built engine (committed; copied next to the app and tests)
+  Blocking/                  (8a) IFilterEngine, AdblockRustEngine (+ NativeMethods, EngineHandle), RequestKind,
+                             FilterListText, FilterDecision, CosmeticResources
   Infrastructure/AppPaths.cs %LOCALAPPDATA%\AJBrowser\{WebView2,Data,Filters,Extensions,Logs,Temp,Tools}
   AdBlocking/                ExtensionVersion, ExtensionPackage (read zip manifest, unpack, clean old),
                              AdBlockerInstallPlanner (keep/install/replace), AdBlockerState (state.json)
@@ -150,13 +157,14 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Media/Ffmpeg/              (6b) FfmpegLocator (Settings path or PATH), FfmpegRunner (local files only), progress parser
   Security/RequestContext.cs (5a) allowlisted headers for app downloads; cookies only added at download time
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (787 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools, filter engine + shipped uBO resources (820 tests)
 ```
 
 **Packages:**
 - App: `Microsoft.Web.WebView2` 1.0.4370.26, `CommunityToolkit.Mvvm` 8.4.2
 - Core: `Microsoft.Data.Sqlite` 11.0.0 (added in Phase 3)
 - Tests: xUnit 2.9.3, `xunit.runner.visualstudio` 3.1.4, `Microsoft.NET.Test.Sdk` 17.14.1
+- Native (no NuGet): `adblock_shim.dll` = adblock-rust 0.13.6 (MPL-2.0), built with Rust 1.100.0 (GNU)
 
 ## 5. Phase status
 
@@ -173,7 +181,8 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 6 HLS streams | 🔶 Built | **6a** Core HLS logic; **6b** download engine (checked on a local stream); **6c** quality list with size estimates, one row per video, separate sound merged when FFmpeg is set. **Agent check with real public streams:** Apple's sample listed its 24 qualities; Mux's "Big Buck Bunny" downloaded at 184p into a valid H.264/AAC `.ts`. 555 tests. **You:** try a site; with FFmpeg set, check that sound gets merged (not tested by the agent, no FFmpeg here). |
 | 7 DASH | 🔶 In progress | **7a** Core: manifest parsing (all four ways DASH lists pieces), DRM/live/multi-period refusal, audio-track choice, container, labels. **7b** download engine (shared with HLS; DB migration v6); agent check on real public streams: 5 manifests read correctly, Big Buck Bunny 180p and a VP9 whole-file track downloaded into valid MP4/WebM files. Also fixed: a deleted FFmpeg made stream downloads fail instead of saving the picture. **7c** picker: quality list + sound-track list for DASH rows, merge note. **Agent check in the real app with your FFmpeg 9.1:** a public DASH stream listed 10 qualities and 10 sound tracks; VP9 + automatic sound → WebM with English Opus, H.264 + automatic → MP4 with English AAC, H.264 + German chosen → MP4 with German sound (all checked with ffprobe). 644 tests. **You:** try a site with a DASH player. |
 | 7.5 yt-dlp | 🔶 Built | **7.5a** Core (installer, quality rows, arguments, progress, errors, cookie file). **7.5b** download engine + Settings (switch with notice, auto-update, Install/Update/Choose for yt-dlp, Deno, FFmpeg). **7.5c** the film button on YouTube, Facebook, Instagram, TikTok, X, Vimeo, Reddit, Twitch, Dailymotion, Bilibili video pages, the yt-dlp row (qualities, sound, fix buttons), "Try yt-dlp on this page", right-click entry. **Agent check in the real app on YouTube:** installed yt-dlp and Deno from the picker, listed 2160p…144p, downloaded 144p with sound; killed AJBrowser mid-download → no yt-dlp left (V17); resumed after restart → finished. Found and fixed on the way: cookies broke public YouTube videos (now only sent when a site asks for sign-in), and older code logged tokens in download addresses. 772 tests. **You:** the Phase 7.5c quick try below (other sites, sign-in, sound languages). |
-| 8–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
+| 8 Own ad-block engine | 🔶 In progress | Your choices: Rust GNU toolchain, keep uBO Lite **and** the new engine, switchable; F16 confirmed caused by uBO Lite. **8a** done: Rust add-on around Brave's adblock-rust, C# wrapper, uBO scriptlet file (generated with your permission), 33 tests (820 total). Measured on real lists: builds in 0.45 s, loads from its saved file in 4 ms, p99 under 40 µs per request; YouTube gets 32 scriptlet calls. Next: 8b lists + site settings, 8c browser hookup + switch, 8d UI. Nothing visible in the app yet. |
+| 9–10 | Not started | |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
 - Media responses expose content type, length and range, and manifest bodies are readable. But content types are unreliable, DASH segments look like `video/mp4`, and fMP4 HLS uses a byte-range `main.mp4`, so suppress anything a manifest references.
@@ -192,7 +201,17 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: try Phase 7.5 (yt-dlp) and the open checks, then Phase 8
+## 6. Next task: Phase 8b
+
+**Scriptlet file done (with your permission):** `AJBrowser/Filters/ubo-resources.json`, generated from uBlock Origin 1.77.4 (99 scriptlets, 54 helpers, 48 redirect files). With the real lists a YouTube page gets 32 ad-removing scriptlet calls. **To update it later** (e.g. when YouTube ads come back and uBO has released a fix): download the newer `uBlock0_<version>.chromium.zip` from github.com/gorhill/uBlock/releases, check its SHA-256, unpack it, run
+`node tools/ubo-resources/generate.mjs <unpacked uBlock0.chromium folder> AJBrowser/Filters/ubo-resources.json`,
+run the tests, and update the version and SHA-256s in `THIRD-PARTY-NOTICES.md`.
+
+**8b next:** filter list catalogue and downloads (EasyList, EasyPrivacy, uBO's lists with their `!#include` parts), expiry and background updates, a saved engine file, per-site on/off (database migration). Still nothing visible until 8c/8d.
+
+**Nothing to check in the app for 8a** (the engine isn't wired into the browser yet). Optional: Test Explorer → 820 tests pass.
+
+## 6x. Still open from Phase 7.5 (yt-dlp) and earlier checks
 
 **Phase 7.5c quick try** (the agent did 1–3 on YouTube; the rest is new to try):
 1. Settings → Downloads: turn on **Big video sites (yt-dlp)** (accept the notice). Installing yt-dlp/Deno there first is optional: the picker offers it too.
@@ -335,7 +354,7 @@ Report anything odd, and the agent will fix it before Phase 4.
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then start Phase 8 (or: fix what I found while testing Phase 7.5).
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 8 with 8b (or: fix what I found while testing Phase 7.5).
 
 ## 7. uBlock Origin Lite test (V5): done
 

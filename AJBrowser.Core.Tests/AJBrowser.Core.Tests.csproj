@@ -16,6 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The app's shipped scriptlet resources, so tests prove the generated file works with the engine. -->
+    <None Include="..\AJBrowser\Filters\ubo-resources.json" Link="TestData\ubo-resources.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\AJBrowser.Core\AJBrowser.Core.csproj" />
   </ItemGroup>
 

@@ -4,7 +4,15 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Needed only by Blocking/NativeMethods.cs (pointers into the adblock-rust DLL). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Brave's adblock-rust engine behind a small C wrapper (Phase 8; source and build in native/adblock-shim).
+         Copied next to every program that uses Core (the app and the tests). -->
+    <None Include="Native\adblock_shim.dll" Link="adblock_shim.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="AJBrowser.Core.Tests" />
