@@ -340,6 +340,25 @@ public sealed class YtDlpProgressTests
     }
 
     [Fact]
+    public void A_parts_own_figure_replaces_its_estimate()
+    {
+        // Your test run: YouTube 360p was announced as 61.6 + 29.3 MB, but the picture part was really ~18 MB.
+        var tracker = new YtDlpProgressTracker("230+258", [61_600_000, 29_300_000], 90_900_000);
+        Assert.Equal(90_900_000, tracker.Total);
+        tracker.Read("ajb-progress 1000000 NA 18000000 500000 30 230"); // yt-dlp's own estimate for the picture part
+        Assert.Equal(18_000_000 + 29_300_000, tracker.Total); // not held at 90.9 MB
+    }
+
+    [Fact]
+    public void Rows_carry_their_part_sizes_in_selector_order()
+    {
+        var info = YtDlpInfoParser.Parse(YtDlpFixtures.YouTube());
+        var row = YtDlpFormats.Build(info, true, "en").Rows.Single(r => r.FormatSelector == "137+140");
+        Assert.Equal(new long?[] { 290_000_000, 9_700_000 }, row.PartBytes);
+        Assert.Equal(new long?[] { 9_700_000 }, YtDlpFormats.Build(info, true, "en").Rows.Single(r => r.FormatSelector == "140").PartBytes);
+    }
+
+    [Fact]
     public void Learns_part_sizes_from_progress()
     {
         var tracker = new YtDlpProgressTracker("18");

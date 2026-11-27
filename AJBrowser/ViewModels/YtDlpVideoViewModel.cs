@@ -75,6 +75,9 @@ public sealed partial class YtDlpVideoViewModel : ObservableObject
 
     public bool HasQualities => Qualities.Count > 1;
 
+    /// <summary>Only one quality: its label as a line of text ("Best available · MP4 · 2.34 MB"), since there's no list.</summary>
+    public string QualitySummary => Qualities.Count == 1 ? Qualities[0].Label : string.Empty;
+
     public ObservableCollection<YtDlpAudioChoice> AudioTracks { get; } = [];
 
     [ObservableProperty]
@@ -175,6 +178,7 @@ public sealed partial class YtDlpVideoViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(HasQualities));
+        OnPropertyChanged(nameof(QualitySummary));
         OnPropertyChanged(nameof(HasAudioChoices));
         OnPropertyChanged(nameof(Details));
         OnPropertyChanged(nameof(CanDownload));

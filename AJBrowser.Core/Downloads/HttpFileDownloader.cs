@@ -22,6 +22,8 @@ public enum DownloadOutcome
 /// <see cref="VideoTrackId"/>/<see cref="AudioTrackId"/>: a DASH stream's chosen representations (<see cref="Url"/> is the manifest).
 /// <see cref="ExpectedBytes"/>: the size the picker showed (exact or estimated), shown as the total until the downloader
 /// reports a better one (yt-dlp only knows the sound part's size once it starts it, streams only after their first piece).
+/// <see cref="ExpectedPartBytes"/>: the same per part (yt-dlp: picture, sound), kept in memory only; each is replaced by
+/// yt-dlp's own figure as soon as that part starts, so one bad estimate doesn't hold the whole total.
 /// </remarks>
 public sealed record DownloadRequest(
     Uri Url,
@@ -31,7 +33,8 @@ public sealed record DownloadRequest(
     Uri? AudioUrl = null,
     string? VideoTrackId = null,
     string? AudioTrackId = null,
-    long? ExpectedBytes = null);
+    long? ExpectedBytes = null,
+    IReadOnlyList<long?>? ExpectedPartBytes = null);
 
 public sealed record DownloadProgress(long ReceivedBytes, long? TotalBytes);
 

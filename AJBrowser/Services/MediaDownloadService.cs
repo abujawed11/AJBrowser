@@ -13,7 +13,8 @@ namespace AJBrowser.Services;
 /// One choice in a stream's quality list: "720p · 3 Mbps · H.264/AAC · ≈ 225 MB est.". HLS: <see cref="VariantUri"/>;
 /// DASH: <see cref="TrackId"/> (the picture track's <c>Representation@id</c>).
 /// </summary>
-public sealed record QualityOption(string Label, Uri? VariantUri, string? TrackId = null)
+/// <remarks>HLS also keeps the variant's <see cref="AudioGroup"/> and <see cref="Bandwidth"/>: qualities may share one picture playlist.</remarks>
+public sealed record QualityOption(string Label, Uri? VariantUri, string? TrackId = null, string? AudioGroup = null, long? Bandwidth = null)
 {
     /// <summary>The label: what screen readers announce for the list item (a record would otherwise read out all its fields).</summary>
     public override string ToString() => Label;
@@ -82,7 +83,7 @@ public sealed class MediaDownloadService
         switch (media.Kind)
         {
             case MediaKind.Hls:
-                return await StartHlsAsync(media, pageTitle, pageUrl, cookieHeader, saveAs, quality?.VariantUri);
+                return await StartHlsAsync(media, pageTitle, pageUrl, cookieHeader, saveAs, quality);
             case MediaKind.Dash:
                 return await StartDashAsync(media, pageTitle, pageUrl, cookieHeader, saveAs, quality?.TrackId, audio?.TrackId);
             case MediaKind.Direct:
@@ -132,13 +133,14 @@ public sealed class MediaDownloadService
     /// clear message, pick the best quality (6c lets you choose), name the file after the result's real format
     /// (.mp4, or .ts without FFmpeg) and queue the job; the download manager runs it with <see cref="HlsDownloader"/>.
     /// </summary>
-    private async Task<MediaDownloadOutcome> StartHlsAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs, Uri? variantUri)
+    private async Task<MediaDownloadOutcome> StartHlsAsync(DetectedMedia media, string? pageTitle, Uri? pageUrl, Func<Uri, Task<string?>> cookieHeader, bool saveAs, QualityOption? quality)
     {
         var context = media.Request ?? RequestContext.FromObservedRequest([], pageUrl);
         HlsPlan plan;
         try
         {
-            plan = await _hls.PrepareAsync(media.Url, context.ToHeaders(await cookieHeader(media.Url)), variantUri);
+            plan = await _hls.PrepareAsync(media.Url, context.ToHeaders(await cookieHeader(media.Url)), quality?.VariantUri,
+                audioGroup: quality?.AudioGroup, bandwidth: quality?.Bandwidth);
         }
         catch (Exception ex)
         {
@@ -255,7 +257,7 @@ public sealed class MediaDownloadService
         try
         {
             var item = await _manager.EnqueueAsync(
-                new DownloadRequest(page, path, null, DownloadSource.YtDlp, null, row.VideoFormatId, row.AudioFormatId, row.EstimatedBytes),
+                new DownloadRequest(page, path, null, DownloadSource.YtDlp, null, row.VideoFormatId, row.AudioFormatId, row.EstimatedBytes, row.PartBytes),
                 page.AbsoluteUri);
             _log.Info($"yt-dlp download queued: {Redactor.Url(page)} (formats {row.FormatSelector}) → {Path.GetFileName(path)}");
             return new MediaDownloadOutcome(item, null);
@@ -291,7 +293,7 @@ public sealed class MediaDownloadService
             var context = media.Request ?? RequestContext.FromObservedRequest([], pageUrl);
             var inspection = await _hls.InspectAsync(media.Url, context.ToHeaders(await cookieHeader(media.Url)));
             var qualities = inspection.Variants
-                .Select(v => new QualityOption(HlsAnalysis.VariantLabel(v, inspection.DurationSeconds), v.Uri))
+                .Select(v => new QualityOption(HlsAnalysis.VariantLabel(v, inspection.DurationSeconds), v.Uri, null, v.AudioGroup, v.Bandwidth))
                 .ToList();
             var canDownload = inspection.Support == HlsSupport.Supported;
             var note = canDownload && inspection.HasSeparateAudio && _ffmpeg() is null ? NoSoundNote : null;

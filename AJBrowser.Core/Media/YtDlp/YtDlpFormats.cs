@@ -21,8 +21,14 @@ public sealed record YtDlpQualityRow(
     bool IsEstimate,
     bool IsAudioOnly,
     string? VideoFormatId,
-    string? AudioFormatId)
+    string? AudioFormatId,
+    long? VideoBytes = null,
+    long? AudioBytes = null)
 {
+    /// <summary>Expected size of each part in <see cref="FormatSelector"/> order (picture, then sound), for the progress total.</summary>
+    public IReadOnlyList<long?> PartBytes =>
+        [.. new (string? Id, long? Bytes)[] { (VideoFormatId, VideoBytes), (AudioFormatId, AudioBytes) }.Where(p => p.Id is not null).Select(p => p.Bytes)];
+
     /// <summary>The label is what screen readers announce for the list item.</summary>
     public override string ToString() => Label;
 }
@@ -220,7 +226,9 @@ public static class YtDlpFormats
             estimate || soundEstimate,
             false,
             picture.FormatId,
-            sound.FormatId);
+            sound.FormatId,
+            bytes,
+            soundBytes);
     }
 
     private static YtDlpQualityRow Single(YtDlpFormat format, double? duration)
@@ -228,7 +236,7 @@ public static class YtDlpFormats
         var (bytes, estimate) = Size(format, duration);
         var extension = SafeExtension(format.Extension) ?? "mp4";
         return new YtDlpQualityRow(Label(format, extension.ToUpperInvariant(), bytes, estimate), format.FormatId, null, extension,
-            format.Height, format.Fps, bytes, estimate, false, format.FormatId, null);
+            format.Height, format.Fps, bytes, estimate, false, format.FormatId, null, bytes, null);
     }
 
     private static YtDlpQualityRow AudioOnly(YtDlpFormat format, double? duration)
@@ -246,7 +254,7 @@ public static class YtDlpFormats
             parts.Add(SizeText(size, estimate));
         }
 
-        return new YtDlpQualityRow(string.Join(" · ", parts), format.FormatId, null, extension, null, null, bytes, estimate, true, null, format.FormatId);
+        return new YtDlpQualityRow(string.Join(" · ", parts), format.FormatId, null, extension, null, null, bytes, estimate, true, null, format.FormatId, null, bytes);
     }
 
     /// <summary>"1080p · 60fps · HDR · H.264 · MP4 · ≈ 412 MB".</summary>

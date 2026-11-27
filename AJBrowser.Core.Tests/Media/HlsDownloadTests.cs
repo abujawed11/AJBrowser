@@ -360,7 +360,7 @@ public sealed class HlsDownloaderTests : IDisposable
     public async Task Prepare_merges_the_default_sound_track_only_with_ffmpeg()
     {
         AddMasterWithSeparateAudio();
-        var withFfmpeg = await Create(ffmpeg: @"C:	oolsfmpeg.exe").PrepareAsync(new Uri(Base + "m.m3u8"), null, new Uri(Base + "v360.m3u8"));
+        var withFfmpeg = await Create(ffmpeg: @"C:\tools\ffmpeg.exe").PrepareAsync(new Uri(Base + "m.m3u8"), null, new Uri(Base + "v360.m3u8"));
         Assert.Equal(Base + "en.m3u8", withFfmpeg.AudioPlaylistUrl!.AbsoluteUri); // DEFAULT=YES wins
         Assert.Equal("English", withFfmpeg.AudioName);
         Assert.Equal(".mp4", withFfmpeg.OutputExtension);
@@ -394,6 +394,47 @@ public sealed class HlsDownloaderTests : IDisposable
                 report(value);
             }
         }
+    }
+}
+
+public sealed class HlsVariantIdentityTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "AJBrowserTests", Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root))
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Qualities_sharing_a_picture_playlist_are_told_apart_by_sound_group_and_bitrate()
+    {
+        // Apple's advanced example (your test run): three 270p qualities, one picture playlist, three sound groups.
+        var server = new FakeHlsServer();
+        server.Add("https://cdn.example/m.m3u8", """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ac3",NAME="AC-3",DEFAULT=YES,URI="ac3/prog.m3u8"
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ec3",NAME="E-AC-3",DEFAULT=YES,URI="ec3/prog.m3u8"
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="AAC",DEFAULT=YES,URI="aac/prog.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=753000,RESOLUTION=480x270,CODECS="avc1.640015,ac-3",AUDIO="ac3"
+            v270/prog.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=561000,RESOLUTION=480x270,CODECS="avc1.640015,ec-3",AUDIO="ec3"
+            v270/prog.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=530000,RESOLUTION=480x270,CODECS="avc1.640015,mp4a.40.2",AUDIO="aac"
+            v270/prog.m3u8
+            """);
+        server.Add("https://cdn.example/v270/prog.m3u8", "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n");
+        var hls = new HlsDownloader(new HttpClient(server), Path.Combine(_root, "t"), () => @"C:\tools\ffmpeg.exe", (_, _) => Task.CompletedTask);
+
+        var plan = await hls.PrepareAsync(new Uri("https://cdn.example/m.m3u8"), null, new Uri("https://cdn.example/v270/prog.m3u8"), audioGroup: "aac", bandwidth: 530000);
+
+        Assert.Equal(("aac", 530000L), (plan.Variant!.AudioGroup, plan.Variant.Bandwidth));
+        Assert.Equal("https://cdn.example/aac/prog.m3u8", plan.AudioPlaylistUrl!.AbsoluteUri);
+        var first = await hls.PrepareAsync(new Uri("https://cdn.example/m.m3u8"), null, new Uri("https://cdn.example/v270/prog.m3u8"));
+        Assert.Equal("ac3", first.Variant!.AudioGroup); // without the extra keys: the first match, as before
     }
 }
 

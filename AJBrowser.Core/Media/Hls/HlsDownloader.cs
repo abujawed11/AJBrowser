@@ -155,7 +155,16 @@ public sealed class HlsDownloader : IStreamDownloader
     /// fetches its media playlist. Decides whether it can be downloaded, which file extension the result gets, and, when
     /// FFmpeg is available, which separate sound track to merge in.
     /// </summary>
-    public async Task<HlsPlan> PrepareAsync(Uri playlistUrl, IReadOnlyDictionary<string, string>? headers, Uri? variantUri = null, CancellationToken cancellationToken = default)
+    /// <param name="audioGroup">With <paramref name="variantUri"/>: the chosen quality's sound group. Several qualities can share
+    /// one picture playlist and differ only in sound (Apple's example: 270p with AAC, AC-3 or E-AC-3); without it the first one wins.</param>
+    /// <param name="bandwidth">With <paramref name="variantUri"/>: the chosen quality's bitrate (same reason).</param>
+    public async Task<HlsPlan> PrepareAsync(
+        Uri playlistUrl,
+        IReadOnlyDictionary<string, string>? headers,
+        Uri? variantUri = null,
+        CancellationToken cancellationToken = default,
+        string? audioGroup = null,
+        long? bandwidth = null)
     {
         var playlist = HlsParser.TryParse(await GetTextAsync(playlistUrl, headers, playlistUrl, cancellationToken).ConfigureAwait(false), playlistUrl);
         HlsVariant? variant = null;
@@ -170,7 +179,11 @@ public sealed class HlsDownloader : IStreamDownloader
             }
 
             var sorted = HlsAnalysis.SortBestFirst(master.Variants);
-            variant = sorted.FirstOrDefault(v => variantUri is not null && v.Uri == variantUri) ?? sorted.FirstOrDefault();
+            variant = sorted.FirstOrDefault(v => variantUri is not null && v.Uri == variantUri
+                                                 && (audioGroup is null || v.AudioGroup == audioGroup)
+                                                 && (bandwidth is null || v.Bandwidth == bandwidth))
+                      ?? sorted.FirstOrDefault(v => variantUri is not null && v.Uri == variantUri)
+                      ?? sorted.FirstOrDefault();
             if (variant is null)
             {
                 return Plan(HlsSupport.Empty);

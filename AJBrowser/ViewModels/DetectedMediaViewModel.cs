@@ -48,6 +48,15 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
     /// <summary>More than one quality to choose from: the picker shows the list.</summary>
     public bool HasQualities => Qualities.Count > 1;
 
+    /// <summary>
+    /// A stream with nothing to choose: its one quality ("720p · 2.1 Mbps · H.264/AAC · ≈ 410 MB est."), or, when the
+    /// page loaded a single quality's playlist (no list of qualities at all), a sentence saying so. Empty otherwise.
+    /// </summary>
+    public string QualitySummary => !IsStream || !WasInspected || IsBlocked ? string.Empty
+        : Qualities.Count == 1 ? Qualities[0].Label
+        : Qualities.Count == 0 ? "Single quality: this page only loaded one, so there's no list to choose from."
+        : string.Empty;
+
     /// <summary>DASH: sound tracks to choose from ("automatic" first); empty when there's no choice.</summary>
     public ObservableCollection<Services.AudioOption> AudioTracks { get; } = [];
 
@@ -94,6 +103,7 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
         Note = info.Note ?? string.Empty;
         OnPropertyChanged(nameof(HasQualities));
         OnPropertyChanged(nameof(HasAudioChoices));
+        OnPropertyChanged(nameof(QualitySummary));
         OnPropertyChanged(nameof(Details));
     }
 

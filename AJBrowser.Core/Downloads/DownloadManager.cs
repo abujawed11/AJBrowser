@@ -126,7 +126,7 @@ public sealed class DownloadManager
 
         lock (_lock)
         {
-            _entries[item.Id] = new Entry(item) { Headers = request.Headers };
+            _entries[item.Id] = new Entry(item) { Headers = request.Headers, ExpectedParts = request.ExpectedPartBytes };
         }
 
         Raise(item);
@@ -460,7 +460,7 @@ public sealed class DownloadManager
         try
         {
             var audio = Uri.TryCreate(start.AudioSourceUrl, UriKind.Absolute, out var audioUri) ? audioUri : null;
-            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source, audio, start.VideoTrackId, start.AudioTrackId, start.TotalBytes);
+            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source, audio, start.VideoTrackId, start.AudioTrackId, start.TotalBytes, entry.ExpectedParts);
             result = start.Source switch
             {
                 DownloadSource.File => await _downloader.DownloadAsync(request, start.Resume, progress, token).ConfigureAwait(false),
@@ -645,6 +645,10 @@ public sealed class DownloadManager
         public CancellationTokenSource? Cts { get; set; }
         public StopReason StopReason { get; set; }
         public IReadOnlyDictionary<string, string>? Headers { get; set; }
+
+        /// <summary>Expected size per part (yt-dlp), memory only like the headers.</summary>
+        public IReadOnlyList<long?>? ExpectedParts { get; set; }
+
         public DateTime LastEvent { get; set; }
         public DateTime LastSave { get; set; }
     }

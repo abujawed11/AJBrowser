@@ -19,7 +19,18 @@
         <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto">
             <StackPanel>
             <!-- yt-dlp (Phase 7.5c): the page's video read by yt-dlp; on YouTube & co. it replaces the page's own finds. -->
+            <!-- Hidden while there's no yt-dlp row: with null content WPF would still draw the template, bound to the tab
+                 itself (empty title, empty lists, a false "Added to downloads"; your report). -->
             <ContentControl Content="{Binding YtDlpVideo}" Focusable="False" IsTabStop="False">
+                <ContentControl.Style>
+                    <Style TargetType="ContentControl">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding YtDlpVideo}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ContentControl.Style>
                 <ContentControl.ContentTemplate>
                     <DataTemplate DataType="{x:Type vm:YtDlpVideoViewModel}">
                         <Border Padding="6" CornerRadius="4" ToolTip="{Binding PageUrl}">
@@ -40,6 +51,18 @@
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="Added to downloads" FontSize="{StaticResource CaptionFontSize}" Foreground="{DynamicResource SuccessBrush}"
                                                Visibility="{Binding WasQueued, Converter={StaticResource PageBoolToVisibility}}" />
+                                    <TextBlock Text="{Binding QualitySummary}" FontSize="{StaticResource CaptionFontSize}" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <ComboBox ItemsSource="{Binding Qualities}" SelectedItem="{Binding SelectedQuality}" DisplayMemberPath="Label"
                                               Margin="0,4,0,0" FontSize="{StaticResource CaptionFontSize}"
                                               Visibility="{Binding HasQualities, Converter={StaticResource PageBoolToVisibility}}"
@@ -111,6 +134,19 @@
                                     <TextBlock Text="Added to downloads" FontSize="{StaticResource CaptionFontSize}"
                                                Foreground="{DynamicResource SuccessBrush}"
                                                Visibility="{Binding WasQueued, Converter={StaticResource PageBoolToVisibility}}" />
+                                    <!-- Streams with one quality (or a single-quality playlist): say what Download gets instead of a list. -->
+                                    <TextBlock Text="{Binding QualitySummary}" FontSize="{StaticResource CaptionFontSize}" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <!-- Streams: choose the quality (best first); the size is an estimate from bitrate × length. -->
                                     <ComboBox ItemsSource="{Binding Qualities}" SelectedItem="{Binding SelectedQuality}" DisplayMemberPath="Label"
                                               Margin="0,4,0,0" FontSize="{StaticResource CaptionFontSize}"

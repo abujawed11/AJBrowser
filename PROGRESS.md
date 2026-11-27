@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **784 passing tests**.
+   - Test Explorer: expect **787 passing tests**.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -150,7 +150,7 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Media/Ffmpeg/              (6b) FfmpegLocator (Settings path or PATH), FfmpegRunner (local files only), progress parser
   Security/RequestContext.cs (5a) allowlisted headers for app downloads; cookies only added at download time
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (784 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (787 tests)
 ```
 
 **Packages:**
@@ -207,6 +207,10 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 **Fixed after your report:** downloads whose title isn't in Latin letters (your Urdu Facebook video) ended with "yt-dlp finished, but the file wasn't found" although the file was complete. Fixed (yt-dlp is told to write UTF-8; AJBrowser also finds the file by its name). That video is already in your Downloads folder; its failed entry can be removed, or Retry marks it complete.
 
 **Fixed after your report:** Instagram rows had no sizes (Instagram tells yt-dlp neither sizes nor the length). AJBrowser now asks Instagram's server for each file's size (about a second), so rows read e.g. "720p · VP9 · MKV · 25.3 MB" and the download shows its total from the start. Without FFmpeg you now also get "Best available · MP4" instead of nothing.
+
+**Fixed after your report:** on pages that aren't yt-dlp sites the picker showed an empty box with empty lists and a false "Added to downloads" above the real rows; it's gone. A stream with only one quality now says so (its quality, or "Single quality: this page only loaded one") instead of showing no list.
+
+**Full download test run (agent, 2026-11-27):** browser downloads, direct video, HLS (local, Mux, Apple), DASH, yt-dlp (YouTube with pause/resume/cancel, Instagram, Facebook, Try yt-dlp) all work in the real app. Fixed on the way: HLS qualities that share a picture playlist (the wrong sound track was downloaded), yt-dlp totals stuck at a too-high estimate, single-quality yt-dlp rows without a label. **Still open:** streams whose playlist links work only once (your phncdn site: "HTTP 410"); fix = read the playlist the browser already received instead of asking again. Details: plan, Checkpoint 7.5c.
 
 **Age-restricted YouTube video (open):** you were signed in, yet it said "needs you to be signed in". The message now tells whether AJBrowser found your sign-in and the site still refused, and the log records yt-dlp's own reason. Try the video again and send the line starting with `yt-dlp couldn't read` from the log (⋯ → Open data folder → `Logs`).
 
