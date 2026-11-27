@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 built (YouTube downloaded from the picker by the agent) · next: your checks, then Phase 8**
+**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 built (YouTube downloaded from the picker by the agent) · **Phase 8 (own ad-block engine) built on the `brave-adblock` branch and not used: you stay with uBlock Origin Lite** · next: your checks, then Phase 9**
 
 ---
 
@@ -173,7 +173,8 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 6 HLS streams | 🔶 Built | **6a** Core HLS logic; **6b** download engine (checked on a local stream); **6c** quality list with size estimates, one row per video, separate sound merged when FFmpeg is set. **Agent check with real public streams:** Apple's sample listed its 24 qualities; Mux's "Big Buck Bunny" downloaded at 184p into a valid H.264/AAC `.ts`. 555 tests. **You:** try a site; with FFmpeg set, check that sound gets merged (not tested by the agent, no FFmpeg here). |
 | 7 DASH | 🔶 In progress | **7a** Core: manifest parsing (all four ways DASH lists pieces), DRM/live/multi-period refusal, audio-track choice, container, labels. **7b** download engine (shared with HLS; DB migration v6); agent check on real public streams: 5 manifests read correctly, Big Buck Bunny 180p and a VP9 whole-file track downloaded into valid MP4/WebM files. Also fixed: a deleted FFmpeg made stream downloads fail instead of saving the picture. **7c** picker: quality list + sound-track list for DASH rows, merge note. **Agent check in the real app with your FFmpeg 9.1:** a public DASH stream listed 10 qualities and 10 sound tracks; VP9 + automatic sound → WebM with English Opus, H.264 + automatic → MP4 with English AAC, H.264 + German chosen → MP4 with German sound (all checked with ffprobe). 644 tests. **You:** try a site with a DASH player. |
 | 7.5 yt-dlp | 🔶 Built | **7.5a** Core (installer, quality rows, arguments, progress, errors, cookie file). **7.5b** download engine + Settings (switch with notice, auto-update, Install/Update/Choose for yt-dlp, Deno, FFmpeg). **7.5c** the film button on YouTube, Facebook, Instagram, TikTok, X, Vimeo, Reddit, Twitch, Dailymotion, Bilibili video pages, the yt-dlp row (qualities, sound, fix buttons), "Try yt-dlp on this page", right-click entry. **Agent check in the real app on YouTube:** installed yt-dlp and Deno from the picker, listed 2160p…144p, downloaded 144p with sound; killed AJBrowser mid-download → no yt-dlp left (V17); resumed after restart → finished. Found and fixed on the way: cookies broke public YouTube videos (now only sent when a site asks for sign-in), and older code logged tokens in download addresses. 772 tests. **You:** the Phase 7.5c quick try below (other sites, sign-in, sound languages). |
-| 8–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
+| 8 Own ad-block engine | ⏸ Not on `main` | Built (8a–8c) on the `brave-adblock` branch; you chose uBlock Origin Lite only (2026-11-27). See §6. |
+| 9–10 | Not started | |
 
 **Key spike findings to remember** (full table in plan §11, F1–F14):
 - Media responses expose content type, length and range, and manifest bodies are readable. But content types are unreliable, DASH segments look like `video/mp4`, and fMP4 HLS uses a byte-range `main.mp4`, so suppress anything a manifest references.
@@ -192,7 +193,11 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: try Phase 7.5 (yt-dlp) and the open checks, then Phase 8
+## 6. Next task: try Phase 7.5 (yt-dlp) and the open checks, then Phase 9
+
+**Phase 8 lives on the `brave-adblock` branch, not here (decided 2026-11-27).** Phases 8a–8c (AJBrowser's own ad-block engine: Brave's adblock-rust through a Rust add-on, uBlock Origin's filter lists with automatic updates, scriptlets and element hiding, and a Settings switch between it and uBO Lite) were built and checked on `brave-adblock` (last commit `35c8462`). You tried it and chose to keep **uBlock Origin Lite only**, so `main` stays without Phase 8 and `brave-adblock` is kept for reference; don't merge it unless you decide otherwise. Its plan and progress files describe that work in full (findings F25–F31: engine speed, script-timing quirks of WebView2, a filter-list format bug).
+
+What that means here: ad blocking stays uBlock Origin Lite (Phase 2.5). Open issue F16 (YouTube's "Experiencing interruptions?", caused by uBO Lite) stays open; a newer uBO Lite release may help (see "Updating uBO Lite later" below). If you used a `brave-adblock` build, your data folder is still fine on `main`: its extra settings are ignored, its database change (an empty `site_settings` table, schema v7) is left alone by `main`, and the `Filters` folder in `%LOCALAPPDATA%\AJBrowser\` can be deleted.
 
 **Phase 7.5c quick try** (the agent did 1–3 on YouTube; the rest is new to try):
 1. Settings → Downloads: turn on **Big video sites (yt-dlp)** (accept the notice). Installing yt-dlp/Deno there first is optional: the picker offers it too.
@@ -328,14 +333,14 @@ Known Phase 2 limits: middle-click / Ctrl+click on links open the tab in front (
 
 Known Phase 2.5 limits: a future uBO Lite upgrade resets its own dashboard settings (new folder → new extension id); our on/off choice is kept. Other open tabs only change after they reload.
 
-**Open issue (F16, deferred to Phase 8):** YouTube repeatedly shows "Experiencing interruptions?" while videos load. It's YouTube's own notice, most likely a reaction to uBO Lite (not yet confirmed with the on/off test). Expected fix: Phase 8 (own engine + scriptlets); meanwhile a newer uBO Lite release might help.
+**Open issue (F16; Phase 8 not used, see §6):** YouTube repeatedly shows "Experiencing interruptions?" while videos load. It's YouTube's own notice, most likely a reaction to uBO Lite (not yet confirmed with the on/off test). Expected fix: Phase 8 (own engine + scriptlets); meanwhile a newer uBO Lite release might help.
 
 Report anything odd, and the agent will fix it before Phase 4.
 
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then start Phase 8 (or: fix what I found while testing Phase 7.5).
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then start Phase 9 (or: fix what I found while testing).
 
 ## 7. uBlock Origin Lite test (V5): done
 

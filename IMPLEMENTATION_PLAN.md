@@ -3,7 +3,7 @@
 > Living roadmap for AJBrowser, a Windows desktop browser built with C#, WPF and WebView2.
 > Tick the checkboxes as work lands. See [How to continue with the coding agent](#13-how-to-continue-with-the-coding-agent) at the end.
 
-**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2, 2.5 (ad blocking) and 3 (bookmarks, history, settings, session) implemented, awaiting your manual checks · Phase 4 (download manager) **built** (4a–4c; key checks run by the agent in the real app) · Phase 5 (direct video detection) **built** (5a–5c; right-click fix F20 checked in the real app) · Phase 6 (HLS) **built** (6a–6c; a real public stream downloaded in the real app; FFmpeg audio merge not yet tried for real) · Phase 7 (DASH) **built** (7a–7c; quality + sound choice and FFmpeg merging checked in the real app) · Phase 7.5 (yt-dlp) **built** (7.5a–7.5c; a YouTube video downloaded from the picker in the real app, crash and resume checked) · next **Phase 8** (or your checks of Phases 1–7.5) · **Phase 7.5 (yt-dlp: YouTube, Facebook, Instagram…) planned** after Phase 7
+**Plan version:** 1.2 · **Created:** 2026-11-26 · **Current phase:** Phase 0 done · Phase 0.5 done · Phases 1, 2, 2.5 (ad blocking) and 3 (bookmarks, history, settings, session) implemented, awaiting your manual checks · Phase 4 (download manager) **built** (4a–4c; key checks run by the agent in the real app) · Phase 5 (direct video detection) **built** (5a–5c; right-click fix F20 checked in the real app) · Phase 6 (HLS) **built** (6a–6c; a real public stream downloaded in the real app; FFmpeg audio merge not yet tried for real) · Phase 7 (DASH) **built** (7a–7c; quality + sound choice and FFmpeg merging checked in the real app) · Phase 7.5 (yt-dlp) **built** (7.5a–7.5c; a YouTube video downloaded from the picker in the real app, crash and resume checked) · **Phase 8 built on the `brave-adblock` branch, not used: you stay with uBlock Origin Lite (2026-11-27)** · next **Phase 9** (or your checks of Phases 1–7.5) · **Phase 7.5 (yt-dlp: YouTube, Facebook, Instagram…) planned** after Phase 7
 
 ---
 
@@ -744,6 +744,8 @@ Complexity: **S** = a session or two, **M** = several sessions, **L** = many ses
 
 ### Phase 8 — Ad-block upgrade: adblock-rust engine (optional) · **L**
 
+> **Phase 8 lives on the `brave-adblock` branch, not here (decided 2026-11-27).** Phases 8a–8c (AJBrowser's own ad-block engine: Brave's adblock-rust through a Rust add-on, uBlock Origin's filter lists with automatic updates, scriptlets and element hiding, and a Settings switch between it and uBO Lite) were built and checked on `brave-adblock` (last commit `35c8462`). You tried it and chose to keep **uBlock Origin Lite only**, so `main` stays without Phase 8 and `brave-adblock` is kept for reference; don't merge it unless you decide otherwise. Its plan and progress files describe that work in full (findings F25–F31: engine speed, script-timing quirks of WebView2, a filter-list format bug). The checklist below is the original plan, left unticked here on purpose.
+
 **Goal / outcome:** Replace or supplement the Phase 2.5 extension with Brave's engine: a toolbar shield showing the blocked count, a per-site toggle, a global toggle, an allowlist, automatically updated community filter lists, and **scriptlet injection** so YouTube-style ads stay blocked.
 
 **Do this only if** the Phase 2.5 extension's limits matter in practice (decision 2026-11-26). **They already show:** YouTube's "Experiencing interruptions?" notice with uBO Lite (open issue F16).
@@ -988,6 +990,7 @@ All findings: 2026-11-26, WebView2 runtime **158.0.4370.33**, SDK 1.0.4370.26, W
 | 2026-11-27 | Phase 7.5b: yt-dlp jobs need no database migration: the page goes in `source_url`, the format ids in the v6 `video_track`/`audio_track` columns, and the merge container is the target file's extension | Same meaning as for DASH (the chosen tracks); one less schema change; nothing secret is stored |
 | 2026-11-27 | Phase 7.5b: yt-dlp gets cookies from the shared WebView2 profile (`CookieManager` of the remembered profile), not from a particular tab | A download resumed after a restart has no tab for its site; all normal tabs share one profile anyway |
 | 2026-11-27 | Phase 7.5b: the old FFmpeg row in Settings becomes one of three "Video tools" rows, and HLS/DASH use an FFmpeg installed by AJBrowser too | One place for all helper programs; installing FFmpeg once helps every kind of video download |
+| 2026-11-27 | Phase 8 stays on the `brave-adblock` branch; `main` keeps **uBlock Origin Lite only** | Your choice after trying AJBrowser's own engine (8a–8c): uBO Lite works well enough, and `main` stays simpler (no Rust add-on, no list downloads). The branch is kept for reference |
 | _pending_ | Installer/updater | Decide in Phase 10 |
 
 ---
