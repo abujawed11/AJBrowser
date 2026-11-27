@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 built (YouTube downloaded from the picker by the agent) · Phase 8 (own ad-block engine) 🔶 in progress: 8a + 8b + 8c done (8c: in the browser, with the engine switch in Settings) · next: 8d**
+**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 built (7a–7c, checked in the real app with your FFmpeg) · Phase 7.5 (yt-dlp) 🔶 built (YouTube downloaded from the picker by the agent) · Phase 8 (own ad-block engine) 🔶 in progress: 8a + 8b + 8c done (8c: in the browser, with the engine switch in Settings) · Phase 8 paused after 8c (you use uBlock Origin Lite) · next: your choice (Phase 9, or fixes from your checks)**
 
 ---
 
@@ -213,7 +213,11 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: Phase 8d (and your quick try of 8c)
+## 6. Next task: your choice (Phase 8 paused)
+
+**Phase 8 paused after 8c (2026-11-27, your choice):** you use **uBlock Origin Lite**, which is the default. AJBrowser's own engine stays available in Settings → Privacy → Ad-block engine but isn't developed further (8d not started). Candidates for next: Phase 9 (UI polish, accessibility: see plan §10 V18), the open download item (playlists that only work once, "HTTP 410"), or anything from the earlier checks below.
+
+### Phase 8c notes (only relevant if you try AJBrowser's engine)
 
 **8c done:** AJBrowser's own engine now works in the browser. Choose it in **Settings → Privacy → Ad-block engine → "AJBrowser's engine"** (uBlock Origin Lite stays the default; only one runs at a time, uBO Lite is just switched off, not removed).
 
@@ -381,7 +385,7 @@ Report anything odd, and the agent will fix it before Phase 4.
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 8 with 8d (or: fix what I found while trying 8c).
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then start Phase 9 (or: fix what I found while testing).
 
 ## 7. uBlock Origin Lite test (V5): done
 
