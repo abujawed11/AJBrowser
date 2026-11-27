@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **777 passing tests**.
+   - Test Explorer: expect **782 passing tests**.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -150,7 +150,7 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
   Media/Ffmpeg/              (6b) FfmpegLocator (Settings path or PATH), FfmpegRunner (local files only), progress parser
   Security/RequestContext.cs (5a) allowlisted headers for app downloads; cookies only added at download time
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (777 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH, yt-dlp, tools (782 tests)
 ```
 
 **Packages:**
@@ -205,6 +205,8 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 **Fixed after your report:** yt-dlp downloads now show a total size from the start (the size the picker showed, replaced by the exact one once yt-dlp knows it) and "Starting…" instead of "0 bytes" while yt-dlp prepares. Please check it once.
 
 **Fixed after your report:** downloads whose title isn't in Latin letters (your Urdu Facebook video) ended with "yt-dlp finished, but the file wasn't found" although the file was complete. Fixed (yt-dlp is told to write UTF-8; AJBrowser also finds the file by its name). That video is already in your Downloads folder; its failed entry can be removed, or Retry marks it complete.
+
+**Fixed after your report:** Instagram rows had no sizes (Instagram tells yt-dlp neither sizes nor the length). AJBrowser now asks Instagram's server for each file's size (about a second), so rows read e.g. "720p · VP9 · MKV · 25.3 MB" and the download shows its total from the start. Without FFmpeg you now also get "Best available · MP4" instead of nothing.
 
 **Old log entries:** before this fix, normal downloads from file hosts wrote their full address (with sign-in tokens in the path) into AJBrowser's log. New entries are redacted; you may want to delete the old log files (⋯ → Open data folder → `Logs`). They never left your PC.
 

@@ -502,3 +502,117 @@ public sealed class YtDlpSitesTests
     [Fact]
     public void Null_is_not_a_video_page() => Assert.False(YtDlpSites.IsVideoPage(null));
 }
+
+/// <summary>Instagram, as yt-dlp reports a public reel (real field set, 2026-11-27): no sizes, no duration,
+/// DASH VP9 picture tracks + one AAC track with bitrates, and plain MP4 files with no codec information at all.</summary>
+public sealed class YtDlpInstagramTests
+{
+    private const string Reel = """
+        {"id":"DgEwK3fDNk3","title":"Video by wealth","uploader":"Wealth","extractor_key":"Instagram","_type":"video",
+         "formats":[
+          {"format_id":"dash-1a","ext":"m4a","vcodec":"none","acodec":"mp4a.40.5","tbr":46.909,"abr":46.909,"protocol":"https","url":"https://scontent.cdninstagram.example/a.m4a?efg=x"},
+          {"format_id":"1","ext":"mp4","protocol":"https","url":"https://scontent.cdninstagram.example/1.mp4?efg=x"},
+          {"format_id":"2","ext":"mp4","protocol":"https","url":"https://scontent.cdninstagram.example/2.mp4?efg=x"},
+          {"format_id":"3","ext":"mp4","protocol":"https","url":"https://scontent.cdninstagram.example/3.mp4?efg=x"},
+          {"format_id":"dash-360v","ext":"mp4","vcodec":"vp09.00.21.08","acodec":"none","width":640,"height":360,"tbr":123.1,"vbr":123.1,"protocol":"https","url":"https://scontent.cdninstagram.example/360.mp4?efg=x"},
+          {"format_id":"dash-720v","ext":"mp4","vcodec":"vp09.00.31.08","acodec":"none","width":1280,"height":720,"tbr":491.6,"vbr":491.6,"protocol":"https","url":"https://scontent.cdninstagram.example/720.mp4?efg=x"},
+          {"format_id":"dash-1080v","ext":"mp4","vcodec":"vp09.00.40.08","acodec":"none","width":1920,"height":1080,"tbr":688.8,"vbr":688.8,"protocol":"https","url":"https://scontent.cdninstagram.example/1080.mp4?efg=x"}
+         ]}
+        """;
+
+    [Fact]
+    public void Plain_files_without_codec_information_count_as_video_with_sound()
+    {
+        var info = YtDlpInfoParser.Parse(Reel);
+        var plain = info.Formats.Single(f => f.FormatId == "3");
+        Assert.True(plain.CodecsUnknown);
+        Assert.True(plain.IsMuxed);
+        Assert.False(plain.IsJunk);
+        Assert.Equal("https://scontent.cdninstagram.example/3.mp4?efg=x", plain.Url!.AbsoluteUri);
+        Assert.False(info.Formats.Single(f => f.FormatId == "dash-720v").CodecsUnknown);
+        Assert.Null(info.DurationSeconds); // Instagram doesn't say
+    }
+
+    [Fact]
+    public void With_ffmpeg_the_dash_qualities_are_offered()
+    {
+        var rows = YtDlpFormats.Build(YtDlpInfoParser.Parse(Reel), true, "en").Rows;
+        Assert.Equal(new[] { "dash-1080v+dash-1a", "dash-720v+dash-1a", "dash-360v+dash-1a", "dash-1a" }, rows.Select(r => r.FormatSelector));
+    }
+
+    [Fact]
+    public void Without_ffmpeg_the_best_plain_file_is_offered()
+    {
+        var choices = YtDlpFormats.Build(YtDlpInfoParser.Parse(Reel), false, "en");
+        var row = choices.Rows[0];
+        Assert.Equal(("3", null, "mp4"), (row.FormatSelector, row.MergeFormat, row.OutputExtension)); // yt-dlp lists worst first
+        Assert.Equal("Best available · MP4", row.Label);
+        Assert.Equal(YtDlpFormats.NeedFfmpegNote, choices.Note);
+    }
+
+    [Fact]
+    public async Task Missing_sizes_are_asked_from_the_server()
+    {
+        var server = new SizeServer();
+        server.Lengths["https://scontent.cdninstagram.example/1080.mp4?efg=x"] = 2_400_000;
+        server.Lengths["https://scontent.cdninstagram.example/a.m4a?efg=x"] = 170_000;
+        server.RangedOnly["https://scontent.cdninstagram.example/720.mp4?efg=x"] = 1_700_000; // no length on HEAD
+        server.Lengths["https://scontent.cdninstagram.example/3.mp4?efg=x"] = 3_100_000;
+        var info = await YtDlpSizeProbe.FillAsync(new HttpClient(server), YtDlpInfoParser.Parse(Reel), "UA/1");
+
+        Assert.Equal(2_400_000, info.Formats.Single(f => f.FormatId == "dash-1080v").FileSize);
+        Assert.Equal(1_700_000, info.Formats.Single(f => f.FormatId == "dash-720v").FileSize);
+        Assert.Null(info.Formats.Single(f => f.FormatId == "dash-360v").FileSize); // the server didn't say: still unknown
+        Assert.All(server.Requests, r => Assert.False(r.Headers.Contains("Cookie")));
+        Assert.All(server.Requests, r => Assert.Equal("UA/1", r.Headers.UserAgent.ToString()));
+
+        var rows = YtDlpFormats.Build(info, true, "en").Rows;
+        Assert.StartsWith("1080p · VP9 · MKV · 2.45 MB", rows[0].Label, StringComparison.Ordinal); // 2.4 MB + 0.17 MB, exact
+        Assert.False(rows[0].IsEstimate);
+        Assert.Equal("Best available · MP4 · 2.96 MB", YtDlpFormats.Build(info, false, "en").Rows[0].Label);
+    }
+
+    [Fact]
+    public async Task Formats_with_sizes_or_without_a_plain_https_address_are_never_probed()
+    {
+        var server = new SizeServer();
+        var json = """
+            {"title":"T","formats":[
+              {"format_id":"a","ext":"mp4","vcodec":"avc1","acodec":"mp4a.40.2","filesize":100,"url":"https://x.example/a.mp4"},
+              {"format_id":"b","ext":"mp4","vcodec":"avc1","acodec":"mp4a.40.2","url":"http://x.example/b.mp4"},
+              {"format_id":"c","ext":"mp4","vcodec":"avc1","acodec":"mp4a.40.2","protocol":"m3u8_native","url":"https://x.example/c.m3u8"},
+              {"format_id":"d","ext":"mp4","vcodec":"avc1","acodec":"mp4a.40.2","url":"file:///C:/d.mp4"}]}
+            """;
+        var info = YtDlpInfoParser.Parse(json);
+        Assert.Same(info, await YtDlpSizeProbe.FillAsync(new HttpClient(server), info, null));
+        Assert.Empty(server.Requests);
+    }
+
+    private sealed class SizeServer : HttpMessageHandler
+    {
+        public Dictionary<string, long> Lengths { get; } = [];
+        public Dictionary<string, long> RangedOnly { get; } = [];
+        public System.Collections.Concurrent.ConcurrentQueue<HttpRequestMessage> Requests { get; } = new();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Enqueue(request);
+            var url = request.RequestUri!.AbsoluteUri;
+            if (request.Method == HttpMethod.Head && Lengths.TryGetValue(url, out var length))
+            {
+                var content = new ByteArrayContent([]);
+                content.Headers.ContentLength = length;
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = content });
+            }
+
+            if (request.Method == HttpMethod.Get && RangedOnly.TryGetValue(url, out var total))
+            {
+                var content = new ByteArrayContent([0]);
+                content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(0, 0, total);
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.PartialContent) { Content = content });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(request.Method == HttpMethod.Head ? System.Net.HttpStatusCode.MethodNotAllowed : System.Net.HttpStatusCode.Forbidden));
+        }
+    }
+}

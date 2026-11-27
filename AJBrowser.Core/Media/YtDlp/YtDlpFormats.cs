@@ -101,10 +101,16 @@ public static class YtDlpFormats
             }
         }
 
-        // Muxed formats without a height (some sites) at the end.
-        if (rows.Count == 0 && muxed.OrderByDescending(Bitrate).FirstOrDefault() is { } unknown)
+        // No row yet (sites that don't say the resolution, like Instagram's plain MP4 files without FFmpeg): the best
+        // format with picture and sound: largest size, then bitrate, then yt-dlp's own order (it lists worst first).
+        if (rows.Count == 0 && muxed.Count > 0)
         {
-            rows.Add(Single(unknown, info.DurationSeconds));
+            var best = muxed.Select((f, i) => (Format: f, Index: i))
+                .OrderByDescending(x => x.Format.FileSize ?? x.Format.FileSizeApprox ?? 0)
+                .ThenByDescending(x => Bitrate(x.Format))
+                .ThenByDescending(x => x.Index)
+                .First().Format;
+            rows.Add(Single(best, info.DurationSeconds));
         }
 
         var orderedAudio = OrderAudio(audio, null, preferredLanguage).ToList();
@@ -250,6 +256,10 @@ public static class YtDlpFormats
         if (picture.Height is { } height)
         {
             parts.Add($"{height}p");
+        }
+        else if (picture.CodecsUnknown)
+        {
+            parts.Add("Best available");
         }
 
         if (picture.Fps is > 31 and var fps)

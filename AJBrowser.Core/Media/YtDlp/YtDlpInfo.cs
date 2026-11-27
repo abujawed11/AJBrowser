@@ -36,6 +36,9 @@ public enum YtDlpLiveStatus
 /// <summary>
 /// One format yt-dlp can fetch. <see cref="VideoCodec"/>/<see cref="AudioCodec"/> are null when the format has no
 /// picture / no sound (yt-dlp writes "none"). Sizes: <see cref="FileSize"/> exact, <see cref="FileSizeApprox"/> estimated.
+/// <see cref="CodecsUnknown"/>: the site didn't say (both codec fields missing, not "none"), as for Instagram's plain MP4
+/// files; such a format is treated as picture + sound of unknown quality. <see cref="Url"/> is only used to ask the
+/// server for the size when yt-dlp doesn't know it (<see cref="YtDlpSizeProbe"/>); it's never logged or stored.
 /// </summary>
 public sealed record YtDlpFormat(
     string FormatId,
@@ -56,17 +59,19 @@ public sealed record YtDlpFormat(
     string? FormatNote,
     string? DynamicRange,
     int? AudioChannels,
-    bool HasDrm)
+    bool HasDrm,
+    bool CodecsUnknown = false,
+    Uri? Url = null)
 {
     public bool HasVideo => VideoCodec is not null;
     public bool HasAudio => AudioCodec is not null;
     public bool IsVideoOnly => HasVideo && !HasAudio;
     public bool IsAudioOnly => HasAudio && !HasVideo;
-    public bool IsMuxed => HasVideo && HasAudio;
+    public bool IsMuxed => (HasVideo && HasAudio) || CodecsUnknown;
 
     /// <summary>Storyboards (thumbnail sheets) and other non-media entries.</summary>
     public bool IsJunk =>
-        (!HasVideo && !HasAudio)
+        (!HasVideo && !HasAudio && !CodecsUnknown)
         || string.Equals(Protocol, "mhtml", StringComparison.OrdinalIgnoreCase)
         || string.Equals(Extension, "mhtml", StringComparison.OrdinalIgnoreCase)
         || (FormatNote?.Contains("storyboard", StringComparison.OrdinalIgnoreCase) ?? false);
@@ -176,8 +181,14 @@ public static class YtDlpInfoParser
             Clip(String(f, "format_note"), 100),
             String(f, "dynamic_range"),
             Int(f, "audio_channels"),
-            HasDrm(f));
+            HasDrm(f),
+            CodecsUnknown: Missing(f, "vcodec") && Missing(f, "acodec"),
+            Url: Http(String(f, "url")));
     }
+
+    /// <summary>The field is absent or JSON null (yt-dlp: not known), as opposed to "none" (known to be absent).</summary>
+    private static bool Missing(JsonElement e, string name) =>
+        !e.TryGetProperty(name, out var v) || v.ValueKind == JsonValueKind.Null;
 
     /// <summary>"none" (and missing) → null: the format has no such stream.</summary>
     private static string? Codec(string? value) =>

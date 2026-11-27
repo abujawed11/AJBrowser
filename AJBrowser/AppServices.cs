@@ -64,7 +64,8 @@ public sealed class AppServices : IDisposable
                 FfmpegPath,
                 () => Tools.Locate(Core.Tools.ToolKind.Deno)),
             // Cookies come from the WebView2 profile, which lives on the UI thread.
-            urls => dispatcher.InvokeAsync(() => Browser.GetSessionAsync(urls)).Task.Unwrap());
+            urls => dispatcher.InvokeAsync(() => Browser.GetSessionAsync(urls)).Task.Unwrap(),
+            http: new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) }); // sizes yt-dlp doesn't know (Instagram)
         DownloadManager = new DownloadManager(
             new DownloadRepository(database),
             new HttpFileDownloader(new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }),

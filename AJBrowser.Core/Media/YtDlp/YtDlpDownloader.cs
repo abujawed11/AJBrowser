@@ -48,14 +48,17 @@ public sealed class YtDlpDownloader : IStreamDownloader
     private readonly Func<IReadOnlyList<Uri>, Task<BrowserSession>> _session;
     private readonly Runner _run;
     private readonly Func<DateTimeOffset> _now;
+    private readonly HttpClient? _http;
     private readonly Dictionary<string, (DateTimeOffset At, YtDlpInfo Info)> _cache = [];
     private readonly HashSet<string> _needsCookies = [];
     private readonly object _cacheLock = new();
 
     /// <param name="tempRoot"><c>%LOCALAPPDATA%\AJBrowser\Temp\ytdlp</c>: one folder per job (and one per inspection).</param>
     /// <param name="session">The browser's cookies for some addresses + its user agent (the app reads the WebView2 profile).</param>
-    public YtDlpDownloader(string tempRoot, YtDlpTools tools, Func<IReadOnlyList<Uri>, Task<BrowserSession>> session, Runner? run = null, Func<DateTimeOffset>? now = null)
+    /// <param name="http">For asking servers for file sizes yt-dlp doesn't report (<see cref="YtDlpSizeProbe"/>); null skips that.</param>
+    public YtDlpDownloader(string tempRoot, YtDlpTools tools, Func<IReadOnlyList<Uri>, Task<BrowserSession>> session, Runner? run = null, Func<DateTimeOffset>? now = null, HttpClient? http = null)
     {
+        _http = http;
         _tempRoot = tempRoot;
         _tools = tools;
         _session = session;
@@ -104,6 +107,12 @@ public sealed class YtDlpDownloader : IStreamDownloader
         if (info is null)
         {
             return new YtDlpInspection(null, problem);
+        }
+
+        if (_http is not null)
+        {
+            var userAgent = (await SafeSessionAsync(pageUrl, cookies: false).ConfigureAwait(false)).UserAgent;
+            info = await YtDlpSizeProbe.FillAsync(_http, info, userAgent, cancellationToken).ConfigureAwait(false);
         }
 
         lock (_cacheLock)
@@ -346,11 +355,11 @@ public sealed class YtDlpDownloader : IStreamDownloader
     private static readonly YtDlpProblem CouldNotStart = new("yt-dlp couldn't be started (your antivirus may have blocked it). Reinstall it in Settings → Downloads.", YtDlpFix.UpdateYtDlp);
 
     /// <summary>The session for a page; without one (no browser engine running yet) yt-dlp goes without cookies.</summary>
-    private async Task<BrowserSession> SafeSessionAsync(Uri pageUrl)
+    private async Task<BrowserSession> SafeSessionAsync(Uri pageUrl, bool cookies = true)
     {
         try
         {
-            return await _session(YtDlpCookieScope.UrlsFor(pageUrl)).ConfigureAwait(false);
+            return await _session(cookies ? YtDlpCookieScope.UrlsFor(pageUrl) : []).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidOperationException or TaskCanceledException or System.Runtime.InteropServices.COMException)
         {
