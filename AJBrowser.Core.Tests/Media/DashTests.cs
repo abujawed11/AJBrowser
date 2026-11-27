@@ -459,6 +459,8 @@ public sealed class DashAnalysisTests
     [InlineData("en", "English")]
     [InlineData("de-DE", "German")]
     [InlineData("und", null)]
+    [InlineData("qaa", null)] // private use (EnvivioDash3 test stream)
+    [InlineData("qtz", null)]
     [InlineData(null, null)]
     public void Names_languages(string? tag, string? expected) =>
         Assert.Equal(expected, DashAnalysis.LanguageName(tag));

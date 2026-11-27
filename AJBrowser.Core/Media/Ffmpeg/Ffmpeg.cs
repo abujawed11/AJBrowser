@@ -160,7 +160,16 @@ public static class FfmpegRunner
             }
         };
 
-        process.Start();
+        try
+        {
+            process.Start();
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // The chosen ffmpeg.exe was deleted, moved, or blocked: a failed run, so callers fall back (picture only / .ts).
+            return new FfmpegResult(-1, $"FFmpeg couldn't be started: {ex.Message}");
+        }
+
         process.BeginErrorReadLine();
         process.BeginOutputReadLine();
 

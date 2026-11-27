@@ -141,7 +141,7 @@ public partial class App : Application
             }
 
             var keep = services.DownloadManager.Items
-                .Where(i => i.Source == Core.Downloads.DownloadSource.Hls && i.State is not (Core.Downloads.DownloadState.Completed or Core.Downloads.DownloadState.Cancelled))
+                .Where(i => i.Source is Core.Downloads.DownloadSource.Hls or Core.Downloads.DownloadSource.Dash && i.State is not (Core.Downloads.DownloadState.Completed or Core.Downloads.DownloadState.Cancelled))
                 .Select(i => i.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 .ToHashSet();
             foreach (var folder in System.IO.Directory.GetDirectories(root))

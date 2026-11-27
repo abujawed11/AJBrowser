@@ -7,7 +7,7 @@ namespace AJBrowser.Core.Persistence;
 public sealed class DownloadRepository
 {
     private const string Columns =
-        "id, kind, state, source_url, page_url, file_path, total_bytes, received_bytes, started_at, completed_at, error, accepts_ranges, etag, last_modified, source_type, audio_url";
+        "id, kind, state, source_url, page_url, file_path, total_bytes, received_bytes, started_at, completed_at, error, accepts_ranges, etag, last_modified, source_type, audio_url, video_track, audio_track";
 
     private readonly Database _database;
 
@@ -19,8 +19,8 @@ public sealed class DownloadRepository
         using var connection = _database.Open();
         using var command = Sql.Command(connection,
             """
-            INSERT INTO downloads (kind, state, source_url, page_url, file_path, total_bytes, received_bytes, started_at, completed_at, error, accepts_ranges, etag, last_modified, source_type, audio_url)
-            VALUES ($kind, $state, $source, $page, $path, $total, $received, $started, $completed, $error, $ranges, $etag, $modified, $sourceType, $audio)
+            INSERT INTO downloads (kind, state, source_url, page_url, file_path, total_bytes, received_bytes, started_at, completed_at, error, accepts_ranges, etag, last_modified, source_type, audio_url, video_track, audio_track)
+            VALUES ($kind, $state, $source, $page, $path, $total, $received, $started, $completed, $error, $ranges, $etag, $modified, $sourceType, $audio, $videoTrack, $audioTrack)
             RETURNING id;
             """,
             Parameters(item));
@@ -35,7 +35,8 @@ public sealed class DownloadRepository
             """
             UPDATE downloads SET kind = $kind, state = $state, source_url = $source, page_url = $page, file_path = $path,
                 total_bytes = $total, received_bytes = $received, started_at = $started, completed_at = $completed, error = $error,
-                accepts_ranges = $ranges, etag = $etag, last_modified = $modified, source_type = $sourceType, audio_url = $audio
+                accepts_ranges = $ranges, etag = $etag, last_modified = $modified, source_type = $sourceType, audio_url = $audio,
+                video_track = $videoTrack, audio_track = $audioTrack
             WHERE id = $id;
             """,
             [.. Parameters(item), ("$id", item.Id)]);
@@ -104,6 +105,8 @@ public sealed class DownloadRepository
         ("$modified", item.Resume?.LastModified),
         ("$sourceType", item.Source.ToString()),
         ("$audio", item.AudioSourceUrl),
+        ("$videoTrack", item.VideoTrackId),
+        ("$audioTrack", item.AudioTrackId),
     ];
 
     private static DownloadItem Read(SqliteDataReader r)
@@ -127,6 +130,8 @@ public sealed class DownloadRepository
             Resume = acceptsRanges || etag is not null || lastModified is not null ? new ResumeInfo(acceptsRanges, etag, lastModified) : null,
             Source = Enum.TryParse<DownloadSource>(r.GetString(14), out var source) ? source : DownloadSource.File,
             AudioSourceUrl = r.IsDBNull(15) ? null : r.GetString(15),
+            VideoTrackId = r.IsDBNull(16) ? null : r.GetString(16),
+            AudioTrackId = r.IsDBNull(17) ? null : r.GetString(17),
         };
     }
 }

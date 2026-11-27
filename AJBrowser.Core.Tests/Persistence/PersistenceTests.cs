@@ -28,10 +28,24 @@ public abstract class DatabaseTestBase : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools(); // pooled connections keep the file open
-        if (Directory.Exists(_root))
+        // Pooled connections keep the file open, and a download manager's last queued write may still be finishing on a
+        // background thread: retry briefly instead of failing the test over its own cleanup.
+        for (var attempt = 0; ; attempt++)
         {
-            Directory.Delete(_root, recursive: true);
+            SqliteConnection.ClearAllPools();
+            try
+            {
+                if (Directory.Exists(_root))
+                {
+                    Directory.Delete(_root, recursive: true);
+                }
+
+                return;
+            }
+            catch (IOException) when (attempt < 20)
+            {
+                Thread.Sleep(50);
+            }
         }
     }
 }

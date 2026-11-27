@@ -144,9 +144,9 @@ public sealed class HlsDownloader : IStreamDownloader
         {
             throw;
         }
-        catch (Exception ex) when (ex is HlsFatalException or HttpRequestException or TaskCanceledException or IOException)
+        catch (Exception ex) when (ex is StreamFatalException or HttpRequestException or TaskCanceledException or IOException)
         {
-            return new HlsInspection(HlsSupport.Empty, ex is HlsFatalException ? ex.Message : "The stream's playlist couldn't be read.", [], null, [], false);
+            return new HlsInspection(HlsSupport.Empty, ex is StreamFatalException ? ex.Message : "The stream's playlist couldn't be read.", [], null, [], false);
         }
     }
 
@@ -219,18 +219,40 @@ public sealed class HlsDownloader : IStreamDownloader
     /// network, HTTP or file problems (they come back as Failed). Cancellation keeps the finished pieces (pause);
     /// <see cref="DeleteTemp"/> removes them (cancel).
     /// </summary>
-    public async Task<DownloadResult> DownloadAsync(long jobId, DownloadRequest request, IProgress<DownloadProgress>? progress, CancellationToken cancellationToken)
+    public Task<DownloadResult> DownloadAsync(long jobId, DownloadRequest request, IProgress<DownloadProgress>? progress, CancellationToken cancellationToken) =>
+        DownloadTracksAsync(jobId, request, async token =>
+        {
+            var tracks = new List<StreamTrack> { StreamTrack.FromHls(await ReadMediaAsync(request.Url, request, token).ConfigureAwait(false)) };
+            if (request.AudioUrl is { } audioUrl)
+            {
+                tracks.Add(StreamTrack.FromHls(await ReadMediaAsync(audioUrl, request, token).ConfigureAwait(false)));
+            }
+
+            return tracks;
+        }, progress, cancellationToken);
+
+    /// <summary>
+    /// The piece engine shared by HLS and DASH: <paramref name="load"/> returns the picture track and optionally a sound
+    /// track; their pieces are fetched (resumably, in the job's temp folder), joined, and merged/remuxed into
+    /// <see cref="DownloadRequest.TargetPath"/>. Throw <see cref="StreamFatalException"/> from <paramref name="load"/>
+    /// for a problem to show. Never throws for network, HTTP or file problems.
+    /// </summary>
+    internal async Task<DownloadResult> DownloadTracksAsync(
+        long jobId,
+        DownloadRequest request,
+        Func<CancellationToken, Task<IReadOnlyList<StreamTrack>>> load,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken)
     {
         var folder = TempFolderFor(jobId);
         var tracks = new List<Track>();
         try
         {
-            var video = await ReadMediaAsync(request.Url, request, cancellationToken).ConfigureAwait(false);
-            tracks.Add(Track.Open(Path.Combine(folder, "video"), video));
-            if (request.AudioUrl is { } audioUrl)
+            var loaded = await load(cancellationToken).ConfigureAwait(false);
+            string[] names = ["video", "audio"];
+            for (var i = 0; i < loaded.Count && i < names.Length; i++)
             {
-                var audio = await ReadMediaAsync(audioUrl, request, cancellationToken).ConfigureAwait(false);
-                tracks.Add(Track.Open(Path.Combine(folder, "audio"), audio));
+                tracks.Add(Track.Open(Path.Combine(folder, names[i]), loaded[i]));
             }
 
             void Report()
@@ -256,7 +278,7 @@ public sealed class HlsDownloader : IStreamDownloader
         {
             return new DownloadResult(DownloadOutcome.Cancelled, tracks.Sum(t => t.Received), null, null); // pieces kept for resuming
         }
-        catch (HlsFatalException ex)
+        catch (StreamFatalException ex)
         {
             return Failed(ex.Message);
         }
@@ -281,10 +303,10 @@ public sealed class HlsDownloader : IStreamDownloader
         var text = await GetTextAsync(url, request.Headers, request.Url, cancellationToken).ConfigureAwait(false);
         if (HlsParser.TryParse(text, url) is not HlsMediaPlaylist media)
         {
-            throw new HlsFatalException("The stream's playlist couldn't be read.");
+            throw new StreamFatalException("The stream's playlist couldn't be read.");
         }
 
-        return HlsAnalysis.Explain(HlsAnalysis.Classify(media)) is { } problem ? throw new HlsFatalException(problem) : media;
+        return HlsAnalysis.Explain(HlsAnalysis.Classify(media)) is { } problem ? throw new StreamFatalException(problem) : media;
     }
 
     private async Task DownloadTrackAsync(Track track, DownloadRequest request, Action report, CancellationToken cancellationToken)
@@ -327,10 +349,12 @@ public sealed class HlsDownloader : IStreamDownloader
         private readonly long[] _sizes;
         private int _done;
 
-        private Track(string folder, HlsMediaPlaylist media)
+        private Track(string folder, StreamTrack stream)
         {
             Folder = folder;
-            Media = media;
+            Media = stream.Media;
+            Extension = stream.Extension;
+            var media = stream.Media;
             _sizes = new long[media.Segments.Count];
             for (var i = 0; i < _sizes.Length; i++)
             {
@@ -344,6 +368,12 @@ public sealed class HlsDownloader : IStreamDownloader
 
         public string Folder { get; }
         public HlsMediaPlaylist Media { get; }
+
+        /// <summary>What the joined pieces form: ".ts", ".mp4" or ".webm".</summary>
+        public string Extension { get; }
+
+        public bool IsTransportStream => Extension == ".ts";
+
         public long Received => _sizes.Sum();
 
         /// <summary>Average finished piece × number of pieces (an estimate until the end).</summary>
@@ -357,10 +387,10 @@ public sealed class HlsDownloader : IStreamDownloader
         }
 
         /// <summary>Keeps finished pieces from an earlier run only if the playlist still has the same pieces.</summary>
-        public static Track Open(string folder, HlsMediaPlaylist media)
+        public static Track Open(string folder, StreamTrack stream)
         {
-            PrepareFolder(folder, media);
-            return new Track(folder, media);
+            PrepareFolder(folder, stream.Media);
+            return new Track(folder, stream);
         }
 
         public void Completed(int index, long bytes)
@@ -427,9 +457,9 @@ public sealed class HlsDownloader : IStreamDownloader
 
         if (tracks.Count > 1 && ffmpeg is not null)
         {
-            var videoFile = Path.Combine(video.Folder, "joined" + (video.Media.IsFragmentedMp4 ? ".mp4" : ".ts"));
+            var videoFile = Path.Combine(video.Folder, "joined" + video.Extension);
             var audio = tracks[1];
-            var audioFile = Path.Combine(audio.Folder, "joined" + (audio.Media.IsFragmentedMp4 ? ".mp4" : ".ts"));
+            var audioFile = Path.Combine(audio.Folder, "joined" + audio.Extension);
             await JoinAsync(video, videoFile, cancellationToken).ConfigureAwait(false);
             await JoinAsync(audio, audioFile, cancellationToken).ConfigureAwait(false);
 
@@ -449,13 +479,14 @@ public sealed class HlsDownloader : IStreamDownloader
 
     private static async Task<string> AssembleVideoOnlyAsync(Track video, string targetPath, string container, string? ffmpeg, CancellationToken cancellationToken)
     {
-        if (video.Media.IsFragmentedMp4)
+        if (!video.IsTransportStream)
         {
-            // fMP4 is already MP4: join straight into the target (renamed to .mp4 if the target was meant for another container).
-            var mp4Target = targetPath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? targetPath : Path.ChangeExtension(targetPath, ".mp4");
-            var partial = FileNamer.PartialPathFor(mp4Target);
+            // fMP4 / WebM pieces already form a playable file: join straight into the target (with the track's own
+            // extension if the target was meant for another container, for example after a failed merge).
+            var ownTarget = targetPath.EndsWith(video.Extension, StringComparison.OrdinalIgnoreCase) ? targetPath : Path.ChangeExtension(targetPath, video.Extension);
+            var partial = FileNamer.PartialPathFor(ownTarget);
             await JoinAsync(video, partial, cancellationToken).ConfigureAwait(false);
-            return MoveIntoPlace(partial, mp4Target);
+            return MoveIntoPlace(partial, ownTarget);
         }
 
         if (targetPath.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
@@ -542,7 +573,7 @@ public sealed class HlsDownloader : IStreamDownloader
     {
         if (key.Uri is null)
         {
-            throw new HlsFatalException("The stream's encryption key has no address.");
+            throw new StreamFatalException("The stream's encryption key has no address.");
         }
 
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -553,7 +584,7 @@ public sealed class HlsDownloader : IStreamDownloader
                 bytes = await FetchWithRetriesAsync(key.Uri, null, request, cancellationToken).ConfigureAwait(false);
                 if (bytes.Length != HlsDecryptor.KeyLength)
                 {
-                    throw new HlsFatalException("The stream's key is invalid (the session may have expired). Play the video again, then Retry.");
+                    throw new StreamFatalException("The stream's key is invalid (the session may have expired). Play the video again, then Retry.");
                 }
 
                 cache[key.Uri] = bytes;
@@ -567,10 +598,38 @@ public sealed class HlsDownloader : IStreamDownloader
         }
     }
 
-    private async Task<string> GetTextAsync(Uri url, IReadOnlyDictionary<string, string>? headers, Uri cookieOwner, CancellationToken cancellationToken)
+    internal async Task<string> GetTextAsync(Uri url, IReadOnlyDictionary<string, string>? headers, Uri cookieOwner, CancellationToken cancellationToken)
     {
         var bytes = await FetchWithRetriesAsync(url, null, new DownloadRequest(cookieOwner, string.Empty, headers), cancellationToken, maxBytes: HlsParser.MaxLength).ConfigureAwait(false);
         return Encoding.UTF8.GetString(bytes);
+    }
+
+    /// <summary>
+    /// The size of a resource and whether its server takes byte ranges, from a one-byte ranged GET (<c>Content-Range</c>
+    /// total on 206). A server that ignores ranges answers 200 with its <c>Content-Length</c>: size known, no ranges.
+    /// </summary>
+    internal async Task<(long? Length, bool AcceptsRanges)> ProbeAsync(Uri url, DownloadRequest request, CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Get, url);
+        foreach (var (name, value) in HeadersFor(url, request))
+        {
+            message.Headers.TryAddWithoutValidation(name, value);
+        }
+
+        message.Headers.TryAddWithoutValidation("Range", "bytes=0-0");
+        using var response = await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var status = (int)response.StatusCode;
+        if (status is 401 or 403 or 410)
+        {
+            throw new StreamFatalException($"The link has expired or access was refused (HTTP {status}). Play the video again, then Retry.");
+        }
+
+        if (response.StatusCode == HttpStatusCode.PartialContent)
+        {
+            return (response.Content.Headers.ContentRange?.Length, response.Content.Headers.ContentRange?.Length is not null);
+        }
+
+        return response.IsSuccessStatusCode ? (response.Content.Headers.ContentLength, false) : throw new StreamFatalException($"The server refused the video (HTTP {status}).");
     }
 
     /// <summary>One GET with retries for transient problems; 401/403/410 mean an expired session (no retry).</summary>
@@ -600,7 +659,7 @@ public sealed class HlsDownloader : IStreamDownloader
                 var status = (int)response.StatusCode;
                 if (status is 401 or 403 or 410)
                 {
-                    throw new HlsFatalException($"The link has expired or access was refused (HTTP {status}). Play the video again, then Retry.");
+                    throw new StreamFatalException($"The link has expired or access was refused (HTTP {status}). Play the video again, then Retry.");
                 }
 
                 if (status is 408 or 429 || status >= 500)
@@ -610,17 +669,17 @@ public sealed class HlsDownloader : IStreamDownloader
                         continue;
                     }
 
-                    throw new HlsFatalException($"The server is busy or failing (HTTP {status}).");
+                    throw new StreamFatalException($"The server is busy or failing (HTTP {status}).");
                 }
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    throw new HlsFatalException($"The server refused a piece of the stream (HTTP {status}).");
+                    throw new StreamFatalException($"The server refused a piece of the stream (HTTP {status}).");
                 }
 
                 if (response.Content.Headers.ContentLength > maxBytes)
                 {
-                    throw new HlsFatalException("A piece of the stream is unexpectedly large.");
+                    throw new StreamFatalException("A piece of the stream is unexpectedly large.");
                 }
 
                 var data = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -630,7 +689,7 @@ public sealed class HlsDownloader : IStreamDownloader
                 {
                     if (range.Offset + range.Length > data.LongLength)
                     {
-                        throw new HlsFatalException("A piece of the stream is shorter than the playlist says.");
+                        throw new StreamFatalException("A piece of the stream is shorter than the playlist says.");
                     }
 
                     data = data.AsSpan((int)range.Offset, (int)range.Length).ToArray();
@@ -671,5 +730,18 @@ public sealed class HlsDownloader : IStreamDownloader
         }
     }
 
-    private sealed class HlsFatalException(string message) : Exception(message);
+}
+
+/// <summary>A stream download problem that retrying won't fix; the message is shown to the user (never contains a URL).</summary>
+internal sealed class StreamFatalException(string message) : Exception(message);
+
+/// <summary>
+/// One track handed to the piece engine: its pieces (as an HLS media playlist; DASH tracks are converted, Phase 7b) and
+/// the file type its joined pieces form: ".ts" (MPEG-TS, needs FFmpeg to become MP4), ".mp4" or ".webm" (playable as they are).
+/// </summary>
+internal sealed record StreamTrack(HlsMediaPlaylist Media, string Extension)
+{
+    public bool IsTransportStream => Extension == ".ts";
+
+    public static StreamTrack FromHls(HlsMediaPlaylist media) => new(media, media.IsFragmentedMp4 ? ".mp4" : ".ts");
 }

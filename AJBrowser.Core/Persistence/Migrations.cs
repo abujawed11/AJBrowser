@@ -86,6 +86,12 @@ public static class Migrations
         """
         ALTER TABLE downloads ADD COLUMN audio_url TEXT NULL;
         """,
+
+        // ---- v6 (Phase 7b): a DASH stream's chosen picture and sound tracks (Representation ids; source_url = the manifest).
+        """
+        ALTER TABLE downloads ADD COLUMN video_track TEXT NULL;
+        ALTER TABLE downloads ADD COLUMN audio_track TEXT NULL;
+        """,
     ];
 
     /// <summary>The schema version this build of AJBrowser expects.</summary>

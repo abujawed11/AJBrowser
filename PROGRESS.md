@@ -4,7 +4,7 @@
 > `IMPLEMENTATION_PLAN.md` (the full roadmap). This file is the short "where are we" summary;
 > the plan is the source of truth for scope, architecture, checklists and findings.
 
-**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 7a done · next 7b · Phase 7.5 (yt-dlp) planned**
+**Last updated:** 2026-11-27 · **Current phase:** Phase 0 ✅ · Phase 0.5 ✅ · Phases 1, 2, 2.5 and 3 🔶 built, awaiting your manual checks · **Phase 4 🔶 built · Phase 5 🔶 built · Phase 6 (HLS) 🔶 built (real public stream downloaded by the agent) · Phase 7 (DASH) 🔶 7a + 7b done · next 7c · Phase 7.5 (yt-dlp) planned**
 
 ---
 
@@ -42,7 +42,7 @@ There's no DRM circumvention, and we don't promise support for every site.
 2. **Get the code:** `git clone` / `git pull`, then open `AJBrowser.slnx`.
 3. **Check it works:**
    - Build (Ctrl+Shift+B): expect 0 warnings and 0 errors.
-   - Test Explorer: expect **619 passing tests**.
+   - Test Explorer: expect **642 passing tests**.
    - F5: the browser window opens with one tab and loads the Bing home page, with a bookmarks bar under the toolbar. In the address bar is a ☆ star; left of **⋯** are the downloads button (↓) and the ad-block shield (green = blocking). The **⋯** menu has History, Bookmarks, Downloads, Settings, Theme, Open data folder, and the Debug-only **Diagnostics** / **Throw test exception** items.
    - On the very first run on a PC, the ad blocker installs itself (the first page waits about 4 s).
    - Make sure **AJBrowser** (not AJBrowser.Core.Tests) is the startup project. Running the test project just prints "exited with code 0".
@@ -134,11 +134,13 @@ AJBrowser.Core/              UI-free logic (net10.0), TreatWarningsAsErrors
                              retries, resume, decryption, assembly; cookies only to their own host)
   Media/Dash/                (7a) DashManifest (tracks + pieces), DashParser (BaseURL chain, SegmentTemplate/Timeline/
                              List/Base, ISO-8601 durations, template expansion), DashAnalysis (DRM/live/multi-period,
-                             best-first, audio choice, container, labels)
+                             best-first, audio choice, container, labels); (7b) DashDownloader (inspect, prepare, download
+                             via the shared HLS piece engine; whole files in 8 MB ranges)
+  Media/StreamDownloaders.cs (7b) routes HLS / DASH jobs for the DownloadManager
   Media/Ffmpeg/              (6b) FfmpegLocator (Settings path or PATH), FfmpegRunner (local files only), progress parser
   Security/RequestContext.cs (5a) allowlisted headers for app downloads; cookies only added at download time
   Tabs/                      ClosedTabStack, TabSelection
-AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH (619 tests)
+AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tabs, ad blocking, persistence, settings, favicons, downloads, media detection, HLS, DASH (642 tests)
 ```
 
 **Packages:**
@@ -159,7 +161,7 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 | 4 Download manager | 🔶 Built | **4a** Core engine; **4b** interceptor, toolbar button + flyout, Downloads page, actions; **4c** downloads survive closing their tab (keep-alive verified in a standalone spike, F18), blank download tabs close themselves, exit question, old `.ajpart` cleanup, "Simultaneous video downloads" setting. 399 tests, build 0 warnings. The agent did **not** launch AJBrowser itself (it would write into your real data folder). **You:** the Phase 4 checks in §6. |
 | 5 Video detection | 🔶 Built | **5a** Core detection logic. **5b** checked by the agent in the real app (real &lt;video&gt; found and downloaded byte-identical with Referer + cookie; size rule; HLS = one entry; clears on a new page); real file names after your report. **5c** right-click "Download video", Settings switch, Save as…, expired-link message + fresh link on Retry, V14 decided. 488 tests. **Pending:** the agent's real-app check of 5c (needs AJBrowser closed), and your quick try. |
 | 6 HLS streams | 🔶 Built | **6a** Core HLS logic; **6b** download engine (checked on a local stream); **6c** quality list with size estimates, one row per video, separate sound merged when FFmpeg is set. **Agent check with real public streams:** Apple's sample listed its 24 qualities; Mux's "Big Buck Bunny" downloaded at 184p into a valid H.264/AAC `.ts`. 555 tests. **You:** try a site; with FFmpeg set, check that sound gets merged (not tested by the agent, no FFmpeg here). |
-| 7 DASH | 🔶 In progress | **7a** Core: manifest parsing (all four ways DASH lists pieces), DRM/live/multi-period refusal, audio-track choice, container, labels. 619 tests, build 0 warnings. Nothing visible in the app yet. **Next: 7b** (download engine), then **7c** (picker). |
+| 7 DASH | 🔶 In progress | **7a** Core: manifest parsing (all four ways DASH lists pieces), DRM/live/multi-period refusal, audio-track choice, container, labels. **7b** download engine (shared with HLS; DB migration v6); agent check on real public streams: 5 manifests read correctly, Big Buck Bunny 180p and a VP9 whole-file track downloaded into valid MP4/WebM files. Also fixed: a deleted FFmpeg made stream downloads fail instead of saving the picture. 642 tests. Still nothing to click in the app. **Next: 7c** (picker). |
 | 7.5 yt-dlp | 📋 Planned | YouTube, Facebook, Instagram, TikTok, X, Vimeo… via yt-dlp as an external tool, installed and updated with one click (with FFmpeg and, if needed, Deno). Checkpoints 7.5a–c in plan Phase 7.5. Starts after Phase 7. |
 | 8–10 | Not started | Phase 8 is the optional adblock-rust upgrade (also the expected fix for open issue F16) |
 
@@ -180,9 +182,9 @@ AJBrowser.Core.Tests/        xUnit: Redactor, AppPaths, logging, navigation, tab
 - **Theme:** the in-box Fluent `ThemeMode` is tentatively accepted. Revisit if visual problems appear.
 - **Installer/updater:** Phase 10.
 
-## 6. Next task: Phase 7b (DASH download engine)
+## 6. Next task: Phase 7c (DASH picker)
 
-Phase 7 is split into **7a** (Core parsing, done), **7b** (download engine: video + audio as two resumable piece lists, FFmpeg merge) and **7c** (picker with quality + audio-track choice, real-app check with public DASH test streams). After Phase 7 comes **Phase 7.5: yt-dlp** for YouTube, Facebook, Instagram and other big platforms (plan Phase 7.5). 7a changes nothing you can see in the app; there's nothing to try yet beyond the build and tests. Meanwhile the Phase 6 checks below are still open.
+Phase 7 is split into **7a** (Core parsing, done), **7b** (download engine, done: video + audio as two resumable piece lists, FFmpeg merge) and **7c** (picker with quality + audio-track choice, real-app check with public DASH test streams). 7b adds database migration v6 (two columns in `downloads`); it runs by itself on the next start. After Phase 7 comes **Phase 7.5: yt-dlp** for YouTube, Facebook, Instagram and other big platforms (plan Phase 7.5). 7a and 7b change nothing you can see in the app yet (DASH rows still say "Soon" until 7c); there's nothing to try beyond the build and tests. Meanwhile the Phase 6 checks below are still open.
 
 
 **Download-complete notice (added after your report; not yet tried in the app):**
@@ -290,7 +292,7 @@ Report anything odd, and the agent will fix it before Phase 4.
 **Updating uBO Lite later:** download the newer `uBOLite_<version>.chromium.zip` from github.com/uBlockOrigin/uBOL-home/releases, put it in `AJBrowser/Extensions/`, delete the old zip, and update the version and SHA-256 in `THIRD-PARTY-NOTICES.md`. The app upgrades itself on the next start.
 
 **Suggested prompt (new session or new PC):**
-> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 7 with checkpoint 7b.
+> Read PROGRESS.md and IMPLEMENTATION_PLAN.md, then continue Phase 7 with checkpoint 7c.
 
 ## 7. uBlock Origin Lite test (V5): done
 

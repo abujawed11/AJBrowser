@@ -17,8 +17,18 @@ public enum DownloadOutcome
 }
 
 /// <summary>What to download and where. <see cref="Headers"/> are extra request headers (for example Referer, cookies in Phase 5).</summary>
-/// <remarks><see cref="AudioUrl"/>: an HLS stream's separate sound track (its media playlist), merged with FFmpeg.</remarks>
-public sealed record DownloadRequest(Uri Url, string TargetPath, IReadOnlyDictionary<string, string>? Headers = null, DownloadSource Source = DownloadSource.File, Uri? AudioUrl = null);
+/// <remarks>
+/// <see cref="AudioUrl"/>: an HLS stream's separate sound track (its media playlist), merged with FFmpeg.
+/// <see cref="VideoTrackId"/>/<see cref="AudioTrackId"/>: a DASH stream's chosen representations (<see cref="Url"/> is the manifest).
+/// </remarks>
+public sealed record DownloadRequest(
+    Uri Url,
+    string TargetPath,
+    IReadOnlyDictionary<string, string>? Headers = null,
+    DownloadSource Source = DownloadSource.File,
+    Uri? AudioUrl = null,
+    string? VideoTrackId = null,
+    string? AudioTrackId = null);
 
 public sealed record DownloadProgress(long ReceivedBytes, long? TotalBytes);
 
@@ -27,7 +37,7 @@ public sealed record DownloadProgress(long ReceivedBytes, long? TotalBytes);
 public sealed record DownloadResult(DownloadOutcome Outcome, long ReceivedBytes, long? TotalBytes, ResumeInfo? Resume, string? Error = null, string? FinalPath = null);
 
 /// <summary>
-/// Downloads app jobs that aren't a single file (HLS streams, Phase 6; DASH later). Pausing keeps its temporary pieces,
+/// Downloads app jobs that aren't a single file (HLS streams, Phase 6; DASH streams, Phase 7). Pausing keeps its temporary pieces,
 /// so the next run continues; <see cref="DeleteTemp"/> throws them away (cancel).
 /// </summary>
 public interface IStreamDownloader

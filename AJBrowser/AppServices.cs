@@ -49,11 +49,12 @@ public sealed class AppServices : IDisposable
             new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(60) }, // per piece; pieces are small
             Path.Combine(paths.Temp, "hls"),
             () => Core.Media.Ffmpeg.FfmpegLocator.Find(Settings.Current.FfmpegPath));
+        Dash = new Core.Media.Dash.DashDownloader(Hls, () => Core.Media.Ffmpeg.FfmpegLocator.Find(Settings.Current.FfmpegPath));
         DownloadManager = new DownloadManager(
             new DownloadRepository(database),
             new HttpFileDownloader(new System.Net.Http.HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
             namer,
-            streams: Hls);
+            streams: new Core.Media.StreamDownloaders(Hls, Dash));
         var downloadLog = CreateLogger(nameof(DownloadManager));
         DownloadManager.MaxConcurrent = settings.Current.MaxConcurrentDownloads;
         DownloadManager.PersistenceFailed += (_, ex) => downloadLog.Warn("Saving a download's state failed", ex);
@@ -102,6 +103,9 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Downloads HLS streams for the download manager (Phase 6).</summary>
     public Core.Media.Hls.HlsDownloader Hls { get; }
+
+    /// <summary>DASH streams (Phase 7); shares the HLS piece engine and its temp folder.</summary>
+    public Core.Media.Dash.DashDownloader Dash { get; }
 
     /// <summary>Owns every download and its database rows.</summary>
     public DownloadManager DownloadManager { get; }

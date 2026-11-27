@@ -17,6 +17,9 @@ public enum DownloadSource
 {
     File,
     Hls,
+
+    /// <summary>A DASH stream (Phase 7b): <see cref="DownloadItem.SourceUrl"/> is the manifest, the tracks are chosen by id.</summary>
+    Dash,
 }
 
 public enum DownloadState
@@ -53,6 +56,12 @@ public sealed record DownloadItem
 
     /// <summary>HLS: the separate sound track's media playlist, merged into the result (Phase 6c). Never logged.</summary>
     public string? AudioSourceUrl { get; init; }
+
+    /// <summary>DASH: the chosen picture track's <c>Representation@id</c> (Phase 7b).</summary>
+    public string? VideoTrackId { get; init; }
+
+    /// <summary>DASH: the separate sound track's <c>Representation@id</c>, merged with FFmpeg; null = picture only or muxed.</summary>
+    public string? AudioTrackId { get; init; }
     public DownloadState State { get; init; }
 
     /// <summary>The real address (needed for retry). Never log it: use <see cref="DisplayUrl"/>.</summary>

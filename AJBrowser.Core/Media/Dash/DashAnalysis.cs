@@ -185,17 +185,21 @@ public static class DashAnalysis
         return parts.Count == 0 ? "Audio" : string.Join(" · ", parts);
     }
 
-    /// <summary>"en-US" → "English"; unknown or invalid tags are shown as they are; "und"/empty → null.</summary>
+    /// <summary>
+    /// "en-US" → "English"; unknown or invalid tags are shown as they are; "und", "zxx", "mul", the private-use range
+    /// "qaa"–"qtz" (seen on real streams) and empty → null.
+    /// </summary>
     public static string? LanguageName(string? tag)
     {
-        if (string.IsNullOrWhiteSpace(tag) || tag.Equals("und", StringComparison.OrdinalIgnoreCase))
+        var primary = PrimaryLanguage(tag);
+        if (primary is null or "und" or "zxx" or "mul" || (primary.Length == 3 && primary[0] == 'q' && primary[1] is >= 'a' and <= 't'))
         {
             return null;
         }
 
         try
         {
-            var culture = CultureInfo.GetCultureInfo(PrimaryLanguage(tag)!);
+            var culture = CultureInfo.GetCultureInfo(primary);
             return culture.ThreeLetterISOLanguageName == "ivl" || culture.EnglishName.StartsWith("Unknown", StringComparison.Ordinal)
                 ? tag
                 : culture.EnglishName;

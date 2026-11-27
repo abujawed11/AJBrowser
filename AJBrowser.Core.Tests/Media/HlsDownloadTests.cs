@@ -20,6 +20,9 @@ internal sealed class FakeHlsServer : HttpMessageHandler
     /// <summary>When set, requests for this URL wait until the token is cancelled (to test pausing mid-download).</summary>
     public string? HangOn { get; set; }
 
+    /// <summary>Behave like a server without range support: always the whole file with 200.</summary>
+    public bool IgnoreRanges { get; set; }
+
     public void Add(string url, string text) => Files[url] = Encoding.UTF8.GetBytes(text);
 
     public void FailNext(string url, params HttpStatusCode[] statuses) =>
@@ -46,10 +49,12 @@ internal sealed class FakeHlsServer : HttpMessageHandler
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
 
-        if (request.Headers.Range?.Ranges.FirstOrDefault() is { From: { } from, To: { } to })
+        if (!IgnoreRanges && request.Headers.Range?.Ranges.FirstOrDefault() is { From: { } from, To: { } to })
         {
             var slice = data.AsSpan((int)from, (int)(to - from + 1)).ToArray();
-            return new HttpResponseMessage(HttpStatusCode.PartialContent) { Content = new ByteArrayContent(slice) };
+            var content = new ByteArrayContent(slice);
+            content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(from, to, data.Length);
+            return new HttpResponseMessage(HttpStatusCode.PartialContent) { Content = content };
         }
 
         return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(data) };

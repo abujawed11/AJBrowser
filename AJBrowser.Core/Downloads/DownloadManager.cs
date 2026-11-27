@@ -35,7 +35,7 @@ public sealed class DownloadManager
     private int _maxConcurrent = DefaultMaxConcurrent;
     private bool _shuttingDown;
 
-    /// <param name="streams">Runs HLS jobs (Phase 6); without it they fail with a clear message.</param>
+    /// <param name="streams">Runs HLS and DASH jobs (Phases 6–7); without it they fail with a clear message.</param>
     public DownloadManager(DownloadRepository repository, HttpFileDownloader downloader, FileNamer namer, Func<DateTime>? utcNow = null, IStreamDownloader? streams = null)
     {
         _repository = repository;
@@ -114,6 +114,8 @@ public sealed class DownloadManager
             Kind = DownloadKind.App,
             Source = request.Source,
             AudioSourceUrl = request.AudioUrl?.AbsoluteUri,
+            VideoTrackId = request.VideoTrackId,
+            AudioTrackId = request.AudioTrackId,
             State = DownloadState.Queued,
             SourceUrl = request.Url.AbsoluteUri,
             PageUrl = pageUrl,
@@ -457,7 +459,7 @@ public sealed class DownloadManager
         try
         {
             var audio = Uri.TryCreate(start.AudioSourceUrl, UriKind.Absolute, out var audioUri) ? audioUri : null;
-            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source, audio);
+            var request = new DownloadRequest(new Uri(start.SourceUrl), start.FilePath, entry.Headers, start.Source, audio, start.VideoTrackId, start.AudioTrackId);
             result = start.Source switch
             {
                 DownloadSource.File => await _downloader.DownloadAsync(request, start.Resume, progress, token).ConfigureAwait(false),
