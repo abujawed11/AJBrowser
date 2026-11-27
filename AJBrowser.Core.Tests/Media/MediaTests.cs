@@ -382,6 +382,8 @@ public sealed class MediaFileNamerTests
     [InlineData("https://cdn.example/v/3f2a9c4e-1b7d-4e8a-9c3f-0a1b2c3d4e5f.mp4")]
     [InlineData("https://cdn.example/v/videoplayback.mp4")]
     [InlineData("https://cdn.example/v/master.mp4")]
+    [InlineData("https://cdn.example/v/dash.mp4")] // Shaka demo: angel-one/dash.mpd
+    [InlineData("https://cdn.example/v/hls.mp4")]
     public void Tokens_and_generic_names_in_the_address_fall_back_to_the_title(string url) =>
         Assert.Equal("Holiday 720p.mp4", MediaFileNamer.Suggest(Media(url, "MP4", 720), "Holiday"));
 

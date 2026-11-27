@@ -7,13 +7,15 @@ namespace AJBrowser.Core.Media.Dash;
 /// <param name="Video">Picture tracks, best first.</param>
 /// <param name="Audio">Separate sound tracks, in manifest order.</param>
 /// <param name="ReferencedFiles">Whole-file tracks' addresses, so the page's own ranged requests for them don't show up as extra rows.</param>
+/// <param name="Manifest">The parsed manifest (for <see cref="DashAnalysis.PickAudio"/> per quality), null when it couldn't be read.</param>
 public sealed record DashInspection(
     DashSupport Support,
     string? Problem,
     IReadOnlyList<DashRepresentation> Video,
     IReadOnlyList<DashRepresentation> Audio,
     double? DurationSeconds,
-    IReadOnlyList<Uri> ReferencedFiles)
+    IReadOnlyList<Uri> ReferencedFiles,
+    DashManifest? Manifest = null)
 {
     /// <summary>The picture comes without sound, which is a separate track (merged with FFmpeg).</summary>
     public bool HasSeparateAudio => Audio.Count > 0 && Video.Any(v => v.Kind == DashTrackKind.Video);
@@ -76,8 +78,8 @@ public sealed class DashDownloader : IStreamDownloader
             var support = DashAnalysis.Classify(manifest);
             var referenced = manifest.Representations.Where(r => r.IsSingleFile).Select(r => r.Segments[0].Uri).Distinct().ToList();
             return support == DashSupport.Supported
-                ? new DashInspection(support, null, DashAnalysis.SortVideoBestFirst(manifest), manifest.Audio.Where(a => a.Segments.Count > 0).ToList(), DashAnalysis.Duration(manifest), referenced)
-                : new DashInspection(support, DashAnalysis.Explain(support), [], [], DashAnalysis.Duration(manifest), referenced);
+                ? new DashInspection(support, null, DashAnalysis.SortVideoBestFirst(manifest), manifest.Audio.Where(a => a.Segments.Count > 0).ToList(), DashAnalysis.Duration(manifest), referenced, manifest)
+                : new DashInspection(support, DashAnalysis.Explain(support), [], [], DashAnalysis.Duration(manifest), referenced, manifest);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -23,7 +23,7 @@ public static partial class MediaFileNamer
     private static readonly HashSet<string> GenericNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "video", "videos", "audio", "media", "file", "download", "stream", "play", "playback", "videoplayback", "index",
-        "master", "playlist", "manifest", "source", "movie", "clip", "content", "get", "watch", "view", "embed", "blob",
+        "master", "playlist", "manifest", "dash", "hls", "source", "movie", "clip", "content", "get", "watch", "view", "embed", "blob",
     };
 
     public static string Suggest(DetectedMedia media, string? pageTitle)

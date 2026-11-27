@@ -31,15 +31,15 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
 
     public bool IsStream => Media.Kind is MediaKind.Hls or MediaKind.Dash;
 
-    /// <summary>Files and HLS streams (Phase 6) that aren't protected or live; DASH comes in Phase 7.</summary>
-    public bool CanDownload => Media.Kind is MediaKind.Direct or MediaKind.Hls && !IsStarting && !IsBlocked;
+    /// <summary>Files and HLS/DASH streams (Phases 6–7) that aren't protected, live or otherwise refused.</summary>
+    public bool CanDownload => Media.Kind is MediaKind.Direct or MediaKind.Hls or MediaKind.Dash && !IsStarting && !IsBlocked;
 
     /// <summary>The stream's playlist said it can't be downloaded (DRM, live): the reason is in <see cref="Message"/>.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanDownload))]
     public partial bool IsBlocked { get; set; }
 
-    /// <summary>HLS: the qualities to choose from, best first (empty until the playlist was read, or for a single quality).</summary>
+    /// <summary>Streams: the qualities to choose from, best first (empty until the playlist was read, or for a single quality).</summary>
     public ObservableCollection<Services.QualityOption> Qualities { get; } = [];
 
     [ObservableProperty]
@@ -47,6 +47,14 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
 
     /// <summary>More than one quality to choose from: the picker shows the list.</summary>
     public bool HasQualities => Qualities.Count > 1;
+
+    /// <summary>DASH: sound tracks to choose from ("automatic" first); empty when there's no choice.</summary>
+    public ObservableCollection<Services.AudioOption> AudioTracks { get; } = [];
+
+    [ObservableProperty]
+    public partial Services.AudioOption? SelectedAudio { get; set; }
+
+    public bool HasAudioChoices => AudioTracks.Count > 1;
 
     /// <summary>The stream's playlist is being read.</summary>
     [ObservableProperty]
@@ -74,22 +82,26 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
         }
 
         SelectedQuality = Qualities.FirstOrDefault();
+        AudioTracks.Clear();
+        foreach (var track in info.AudioTracks ?? [])
+        {
+            AudioTracks.Add(track);
+        }
+
+        SelectedAudio = AudioTracks.FirstOrDefault();
         IsBlocked = !info.CanDownload;
         Message = info.Problem ?? string.Empty;
         Note = info.Note ?? string.Empty;
         OnPropertyChanged(nameof(HasQualities));
+        OnPropertyChanged(nameof(HasAudioChoices));
         OnPropertyChanged(nameof(Details));
     }
-
-    /// <summary>DASH: listed, not downloadable yet.</summary>
-    public bool IsComingSoon => Media.Kind == MediaKind.Dash;
 
     /// <summary>The file's name: the server's, the one in the address, or the page title (see MediaFileNamer).</summary>
     public string Title => Media.Kind switch
     {
-        MediaKind.Dash => "Stream (DASH)",
-        // A stream's file type (.mp4 or .ts) is only known once its playlist is read, so no extension here.
-        MediaKind.Hls => System.IO.Path.GetFileNameWithoutExtension(_name(Media)),
+        // A stream's file type (.mp4, .webm, .ts…) is only known once its playlist is read, so no extension here.
+        MediaKind.Hls or MediaKind.Dash => System.IO.Path.GetFileNameWithoutExtension(_name(Media)),
         _ => _name(Media),
     };
 
@@ -108,16 +120,12 @@ public sealed partial class DetectedMediaViewModel : ObservableObject
     {
         get
         {
-            if (Media.Kind == MediaKind.Hls)
+            if (IsStream)
             {
-                return IsInspecting ? $"Stream (HLS) · reading qualities… · {Media.Host}"
-                    : _streamDuration is { } length ? $"Stream (HLS) · {FormatDuration(length)} · {Media.Host}"
-                    : $"Stream (HLS) · {Media.Host}";
-            }
-
-            if (IsComingSoon)
-            {
-                return $"DASH downloads arrive in a later version · {Media.Host}";
+                var kind = Media.Kind == MediaKind.Hls ? "Stream (HLS)" : "Stream (DASH)";
+                return IsInspecting ? $"{kind} · reading qualities… · {Media.Host}"
+                    : _streamDuration is { } length ? $"{kind} · {FormatDuration(length)} · {Media.Host}"
+                    : $"{kind} · {Media.Host}";
             }
 
             var parts = new List<string> { Quality, Media.TotalBytes is { } bytes ? DownloadText.Size(bytes) : "Unknown size" };

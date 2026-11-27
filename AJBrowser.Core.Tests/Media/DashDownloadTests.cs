@@ -246,6 +246,7 @@ public sealed class DashDownloaderTests : IDisposable
         Assert.Equal(new[] { "en", "de" }, inspection.Audio.Select(a => a.Id));
         Assert.True(inspection.HasSeparateAudio);
         Assert.Equal(12, inspection.DurationSeconds);
+        Assert.NotNull(inspection.Manifest); // the picker picks the sound per quality from it
     }
 
     [Fact]

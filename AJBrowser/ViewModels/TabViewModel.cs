@@ -778,7 +778,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
             {
                 var row = new DetectedMediaViewModel(item, DownloadMediaAsync, media => Core.Media.MediaFileNamer.Suggest(media, Title));
                 Media.Add(row);
-                if (item.Kind == Core.Media.MediaKind.Hls)
+                if (item.Kind is Core.Media.MediaKind.Hls or Core.Media.MediaKind.Dash)
                 {
                     _ = InspectStreamAsync(row);
                 }
@@ -799,7 +799,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         row.IsStarting = true;
         try
         {
-            var outcome = await _services.MediaDownloads.StartAsync(row.Media, Title, PageUri, _browser.GetCookieHeaderAsync, saveAs, row.SelectedQuality?.VariantUri);
+            var outcome = await _services.MediaDownloads.StartAsync(row.Media, Title, PageUri, _browser.GetCookieHeaderAsync, saveAs, row.SelectedQuality, row.SelectedAudio);
             row.WasQueued = outcome.Item is not null || row.WasQueued;
             if (outcome.Item is null)
             {
@@ -817,8 +817,9 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
     }
 
     /// <summary>
-    /// Reads a new stream row's playlist: its qualities and length, or why it can't be downloaded. A master playlist also
-    /// tells which other playlists belong to it; their rows are hidden (one row per video).
+    /// Reads a new stream row's playlist or manifest: its qualities (and DASH sound tracks) and length, or why it can't be
+    /// downloaded. A master playlist also tells which other playlists belong to it, a DASH manifest which whole files;
+    /// their rows are hidden (one row per video).
     /// </summary>
     private async Task InspectStreamAsync(DetectedMediaViewModel row)
     {
