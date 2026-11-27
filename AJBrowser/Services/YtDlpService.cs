@@ -1,5 +1,7 @@
 using System.Globalization;
+using AJBrowser.Core.Logging;
 using AJBrowser.Core.Media.YtDlp;
+using AJBrowser.Core.Security;
 using AJBrowser.Core.Settings;
 using AJBrowser.Core.Tools;
 
@@ -15,9 +17,11 @@ public sealed class YtDlpService
     private readonly ToolService _tools;
     private readonly MediaDownloadService _media;
     private readonly SettingsStore _settings;
+    private readonly AppLogger _log;
 
-    public YtDlpService(YtDlpDownloader downloader, ToolService tools, MediaDownloadService media, SettingsStore settings)
+    public YtDlpService(YtDlpDownloader downloader, ToolService tools, MediaDownloadService media, SettingsStore settings, AppLogger log)
     {
+        _log = log;
         _downloader = downloader;
         _tools = tools;
         _media = media;
@@ -40,7 +44,17 @@ public sealed class YtDlpService
     public bool HasFfmpeg => _tools.Locate(ToolKind.Ffmpeg) is not null;
     public bool HasDeno => _tools.Locate(ToolKind.Deno) is not null;
 
-    public Task<YtDlpInspection> InspectAsync(Uri page) => _downloader.InspectAsync(page);
+    /// <summary>Reads a page; a failure is logged with what yt-dlp itself said (redacted: no cookies, tokens or query strings).</summary>
+    public async Task<YtDlpInspection> InspectAsync(Uri page)
+    {
+        var inspection = await _downloader.InspectAsync(page);
+        if (inspection.Problem is { } problem)
+        {
+            _log.Warn($"yt-dlp couldn't read {Redactor.Url(page)}: {problem.Message}" + (problem.Detail is null ? string.Empty : $" [{problem.Detail}]"));
+        }
+
+        return inspection;
+    }
 
     public void Forget(Uri page) => _downloader.Forget(page);
 

@@ -79,7 +79,7 @@ public sealed class AppServices : IDisposable
         Downloads = new DownloadsViewModel(DownloadManager, DownloadInterceptor, shell, settings, CreateLogger(nameof(DownloadsViewModel)));
 
         MediaDownloads = new MediaDownloadService(DownloadManager, Hls, Dash, _namer, settings, FfmpegPath, AskSavePath, CreateLogger(nameof(MediaDownloadService)));
-        YtDlpVideos = new YtDlpService(YtDlp, Tools, MediaDownloads, settings);
+        YtDlpVideos = new YtDlpService(YtDlp, Tools, MediaDownloads, settings, CreateLogger(nameof(YtDlpService)));
 
         _tabServices = new TabServices(
             AddressResolver,

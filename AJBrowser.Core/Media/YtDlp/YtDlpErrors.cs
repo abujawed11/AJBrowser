@@ -13,8 +13,11 @@ public enum YtDlpFix
     Retry,
 }
 
-/// <summary>A yt-dlp failure as a sentence for the user (never containing addresses, cookies or tokens) and a suggested fix.</summary>
-public sealed record YtDlpProblem(string Message, YtDlpFix Fix);
+/// <summary>
+/// A yt-dlp failure as a sentence for the user (never containing addresses, cookies or tokens) and a suggested fix.
+/// <see cref="Detail"/>: yt-dlp's own last error/warning lines, redacted, for the log (diagnosing sign-in problems).
+/// </summary>
+public sealed record YtDlpProblem(string Message, YtDlpFix Fix, string? Detail = null);
 
 /// <summary>Maps yt-dlp's <c>ERROR:</c>/<c>WARNING:</c> lines to plain sentences (plan Phase 7.5a). Pure, unit-tested.</summary>
 public static class YtDlpErrors
@@ -61,7 +64,21 @@ public static class YtDlpErrors
     /// The best explanation for a failed run from its stderr lines (latest error first). Unknown errors: yt-dlp's last
     /// <c>ERROR:</c> line, redacted (addresses, cookies, tokens removed), shortened.
     /// </summary>
-    public static YtDlpProblem Explain(IReadOnlyList<string> errorLines)
+    public static YtDlpProblem Explain(IReadOnlyList<string> errorLines) =>
+        ExplainCore(errorLines) with { Detail = DetailOf(errorLines) };
+
+    /// <summary>The last three ERROR/WARNING lines, redacted and shortened: what yt-dlp itself said.</summary>
+    public static string? DetailOf(IReadOnlyList<string> errorLines)
+    {
+        var lines = errorLines
+            .Where(l => l.StartsWith("ERROR:", StringComparison.Ordinal) || l.StartsWith("WARNING:", StringComparison.Ordinal))
+            .TakeLast(3)
+            .Select(l => Redactor.Text(l.Length > 300 ? l[..300] + "…" : l))
+            .ToList();
+        return lines.Count == 0 ? null : string.Join(" | ", lines);
+    }
+
+    private static YtDlpProblem ExplainCore(IReadOnlyList<string> errorLines)
     {
         var errors = errorLines.Where(l => l.StartsWith("ERROR:", StringComparison.Ordinal)).Reverse().ToList();
 

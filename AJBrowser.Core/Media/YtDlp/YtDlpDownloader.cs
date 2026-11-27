@@ -149,7 +149,18 @@ public sealed class YtDlpDownloader : IStreamDownloader
 
             if (!result.Succeeded)
             {
-                return (null, result.ExitCode == -1 ? CouldNotStart : YtDlpErrors.Explain(result.ErrorTail));
+                if (result.ExitCode == -1)
+                {
+                    return (null, CouldNotStart);
+                }
+
+                var problem = YtDlpErrors.Explain(result.ErrorTail);
+                if (withCookies && problem.Fix == YtDlpFix.SignIn)
+                {
+                    problem = SignInRefused(session.Cookies.Count, problem.Detail);
+                }
+
+                return (null, problem with { Detail = $"{(withCookies ? $"with {session.Cookies.Count} browser cookies" : "without cookies")}: {problem.Detail}" });
             }
 
             try
@@ -287,7 +298,8 @@ public sealed class YtDlpDownloader : IStreamDownloader
                     }
 
                     Forget(request.Url);
-                    return new DownloadResult(DownloadOutcome.Failed, tracker.Received, null, null, problem.Message);
+                    var message = useCookies && problem.Fix == YtDlpFix.SignIn ? SignInRefused(session.Cookies.Count, problem.Detail).Message : problem.Message;
+                    return new DownloadResult(DownloadOutcome.Failed, tracker.Received, null, null, message);
                 }
 
                 var finalPath = tracker.FinalPath is { } printed && File.Exists(printed) ? printed : FindOutput(request.TargetPath);
@@ -349,6 +361,11 @@ public sealed class YtDlpDownloader : IStreamDownloader
         ".mkv" => "mkv",
         _ => "mp4",
     };
+
+    /// <summary>The site asked for sign-in and the retry with the browser's cookies didn't help: say which case it is.</summary>
+    internal static YtDlpProblem SignInRefused(int cookiesSent, string? detail) => cookiesSent == 0
+        ? new YtDlpProblem("You don't seem to be signed in to this site in AJBrowser. Sign in on the site here (in this browser), then try again.", YtDlpFix.SignIn, detail)
+        : new YtDlpProblem("The site still refused, although AJBrowser sent your sign-in from this browser. Check that your account may watch this video (on YouTube: age verification in your Google account), reload the page, then try again.", YtDlpFix.Retry, detail);
 
     private static readonly YtDlpProblem NotInstalled = new("yt-dlp isn't installed. Install it in Settings → Downloads.", YtDlpFix.UpdateYtDlp);
 

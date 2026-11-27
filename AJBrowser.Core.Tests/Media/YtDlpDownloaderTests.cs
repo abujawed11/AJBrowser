@@ -182,7 +182,7 @@ public sealed class YtDlpDownloaderTests : IDisposable
         _behaviour = (_, _, _) => Task.FromResult(new ProcessResult(1, [], ["ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users."]));
         var result = await Create().DownloadAsync(2, Request(Target("v.mp4")), null, CancellationToken.None);
         Assert.Equal(DownloadOutcome.Failed, result.Outcome);
-        Assert.StartsWith("This video needs you to be signed in.", result.Error, StringComparison.Ordinal);
+        Assert.StartsWith("The site still refused, although AJBrowser sent your sign-in", result.Error, StringComparison.Ordinal); // retried with cookies, still refused
 
         _behaviour = (_, _, _) => Task.FromResult(new ProcessResult(-1, [], ["couldn't be started"]));
         Assert.Contains("antivirus", (await Create().DownloadAsync(3, Request(Target("w.mp4")), null, CancellationToken.None)).Error);
@@ -275,6 +275,31 @@ public sealed class YtDlpDownloaderTests : IDisposable
         Assert.Equal(DownloadOutcome.Completed, result.Outcome);
         Assert.Equal(3, _calls.Count); // the download went straight to cookies (remembered)
         Assert.Contains("--cookies", _calls[2]);
+    }
+
+    [Fact]
+    public async Task Signed_in_but_still_refused_says_so_and_keeps_yt_dlps_words_for_the_log()
+    {
+        _behaviour = (args, _, _) => Task.FromResult(new ProcessResult(1, [],
+        [
+            "WARNING: [youtube] The provided YouTube account cookies are no longer valid. They have likely been rotated in the browser as a security measure.",
+            "ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users.",
+        ]));
+        var problem = (await Create().InspectAsync(Page)).Problem!;
+        Assert.Equal(2, _calls.Count);
+        Assert.StartsWith("The site still refused, although AJBrowser sent your sign-in", problem.Message, StringComparison.Ordinal);
+        Assert.StartsWith("with 1 browser cookies: WARNING: [youtube] The provided YouTube account cookies are no longer valid", problem.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-value", problem.Detail);
+    }
+
+    [Fact]
+    public async Task Not_signed_in_in_ajbrowser_says_so()
+    {
+        _session = _ => Task.FromResult(new BrowserSession([], "UA"));
+        _behaviour = (_, _, _) => Task.FromResult(new ProcessResult(1, [], ["ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users."]));
+        var problem = (await Create().InspectAsync(Page)).Problem!;
+        Assert.StartsWith("You don't seem to be signed in to this site in AJBrowser", problem.Message, StringComparison.Ordinal);
+        Assert.Equal(YtDlpFix.SignIn, problem.Fix);
     }
 
     [Fact]
