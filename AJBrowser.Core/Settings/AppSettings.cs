@@ -73,6 +73,12 @@ public sealed record AppSettings
     /// <summary>Keep AJBrowser's own copy of yt-dlp up to date (checked at most daily). On by default: it goes stale on YouTube within weeks.</summary>
     public bool AutoUpdateYtDlp { get; init; } = true;
 
+    /// <summary>
+    /// Filter lists AJBrowser's own ad-block engine uses (Phase 8; ids from <see cref="Blocking.FilterListCatalog"/>).
+    /// Null = the catalogue's defaults (uBlock Origin's default set), so new default lists reach existing users.
+    /// </summary>
+    public IReadOnlyList<string>? EnabledFilterLists { get; init; }
+
     /// <summary>Look for videos on pages and offer them in the toolbar (Phase 5). On by default.</summary>
     public bool DetectVideos { get; init; } = true;
 
@@ -172,6 +178,16 @@ public sealed record AppSettings
         if (string.IsNullOrWhiteSpace(DownloadFolder))
         {
             result = result with { DownloadFolder = null };
+        }
+
+        if (EnabledFilterLists is not null)
+        {
+            // Unknown ids (older or newer AJBrowser) are dropped; an explicitly empty list stays empty (all off).
+            var known = Blocking.FilterListCatalog.Normalize(EnabledFilterLists);
+            if (!known.SequenceEqual(EnabledFilterLists))
+            {
+                result = result with { EnabledFilterLists = known };
+            }
         }
 
         return result;

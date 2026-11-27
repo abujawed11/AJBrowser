@@ -92,6 +92,15 @@ public static class Migrations
         ALTER TABLE downloads ADD COLUMN video_track TEXT NULL;
         ALTER TABLE downloads ADD COLUMN audio_track TEXT NULL;
         """,
+
+        // ---- v7 (Phase 8b): per-site settings. First use: sites where the user turned ad blocking off.
+        """
+        CREATE TABLE site_settings (
+            site             TEXT    PRIMARY KEY,    -- BlockingPolicy.SiteKey: lower-case host without "www."
+            adblock_disabled INTEGER NOT NULL DEFAULT 0,
+            updated_at       INTEGER NOT NULL        -- Unix time in milliseconds (UTC)
+        );
+        """,
     ];
 
     /// <summary>The schema version this build of AJBrowser expects.</summary>
