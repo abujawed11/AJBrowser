@@ -90,4 +90,13 @@ public class RedactorTests
     {
         Assert.Equal(expected, Redactor.Text(input));
     }
+
+    [Fact]
+    public void Tokens_in_url_paths_are_redacted_in_free_text()
+    {
+        const string jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXRoIjoiYS9iLmZsdiIsImV4cCI6MTc5NjMyMjM3NH0.0N0BSRzEOpXnTSIz4gt1crb8jGuTQ8i9hbT95rp7hqA";
+        var result = Redactor.Text($"Download started: https://files.example/files/direct/{jwt}/clip.flv → clip.flv");
+        Assert.DoesNotContain("eyJ", result);
+        Assert.Equal("Download started: https://files.example/files/direct/[id]/clip.flv → clip.flv", result);
+    }
 }

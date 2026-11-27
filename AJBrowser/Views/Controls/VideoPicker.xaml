@@ -16,8 +16,64 @@
         <TextBlock Text="Found while the page loaded or played. Quality and size show when the site reveals them."
                    Margin="4,0,4,8" FontSize="{StaticResource CaptionFontSize}" Style="{StaticResource SecondaryTextStyle}" />
 
-        <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding Media}" Focusable="False">
+        <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+            <!-- yt-dlp (Phase 7.5c): the page's video read by yt-dlp; on YouTube & co. it replaces the page's own finds. -->
+            <ContentControl Content="{Binding YtDlpVideo}" Focusable="False" IsTabStop="False">
+                <ContentControl.ContentTemplate>
+                    <DataTemplate DataType="{x:Type vm:YtDlpVideoViewModel}">
+                        <Border Padding="6" CornerRadius="4" ToolTip="{Binding PageUrl}">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="&#xE792;" Style="{StaticResource RowIconButtonStyle}"
+                                        Command="{Binding SaveAsCommand}" VerticalAlignment="Top" Margin="2,2,0,0"
+                                        Visibility="{Binding CanDownload, Converter={StaticResource PageBoolToVisibility}}"
+                                        ToolTip="Save as… (choose the folder and name)" AutomationProperties.Name="Save video as (yt-dlp)" />
+                                <Button DockPanel.Dock="Right" Content="Download" Command="{Binding DownloadCommand}" MinWidth="88"
+                                        VerticalAlignment="Top" Margin="8,2,0,0" Style="{DynamicResource AccentButtonStyle}"
+                                        Visibility="{Binding CanDownload, Converter={StaticResource PageBoolToVisibility}}"
+                                        AutomationProperties.Name="Download video (yt-dlp)" />
+                                <TextBlock DockPanel.Dock="Left" Text="&#xE714;" FontFamily="{StaticResource IconFontFamily}" FontSize="20"
+                                           VerticalAlignment="Top" Margin="0,2,10,0" Foreground="{DynamicResource AccentBrush}" />
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Details}" FontSize="{StaticResource CaptionFontSize}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="Added to downloads" FontSize="{StaticResource CaptionFontSize}" Foreground="{DynamicResource SuccessBrush}"
+                                               Visibility="{Binding WasQueued, Converter={StaticResource PageBoolToVisibility}}" />
+                                    <ComboBox ItemsSource="{Binding Qualities}" SelectedItem="{Binding SelectedQuality}" DisplayMemberPath="Label"
+                                              Margin="0,4,0,0" FontSize="{StaticResource CaptionFontSize}"
+                                              Visibility="{Binding HasQualities, Converter={StaticResource PageBoolToVisibility}}"
+                                              AutomationProperties.Name="Quality (yt-dlp)" />
+                                    <ComboBox ItemsSource="{Binding AudioTracks}" SelectedItem="{Binding SelectedAudio}" DisplayMemberPath="Label"
+                                              Margin="0,4,0,0" FontSize="{StaticResource CaptionFontSize}"
+                                              Visibility="{Binding HasAudioChoices, Converter={StaticResource PageBoolToVisibility}}"
+                                              AutomationProperties.Name="Sound track (yt-dlp)" />
+                                    <TextBlock Text="{Binding Message}" FontSize="{StaticResource CaptionFontSize}" TextWrapping="Wrap"
+                                               Style="{StaticResource ErrorTextStyle}" Margin="0" />
+                                    <TextBlock Text="{Binding Note}" FontSize="{StaticResource CaptionFontSize}" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <Button Content="{Binding ActionLabel}" Command="{Binding FixCommand}" HorizontalAlignment="Left" Margin="0,6,0,0"
+                                            Visibility="{Binding HasAction, Converter={StaticResource PageBoolToVisibility}}"
+                                            AutomationProperties.Name="{Binding ActionLabel}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ContentControl.ContentTemplate>
+            </ContentControl>
+
+            <ItemsControl ItemsSource="{Binding Media}" Focusable="False"
+                          Visibility="{Binding ShowsDetectedMedia, Converter={StaticResource PageBoolToVisibility}}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:DetectedMediaViewModel}">
                         <Border Padding="6" CornerRadius="4" ToolTip="{Binding ToolTip}">
@@ -85,6 +141,13 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+
+            <!-- Pages not on yt-dlp's built-in list: ask yt-dlp anyway. -->
+            <Button Content="Try yt-dlp on this page" Command="{Binding TryYtDlpCommand}" HorizontalAlignment="Left" Margin="6,8,0,2"
+                    Visibility="{Binding CanTryYtDlp, Converter={StaticResource PageBoolToVisibility}}"
+                    ToolTip="yt-dlp knows 1,000+ sites; it reads this page and lists what it finds."
+                    AutomationProperties.Name="Try yt-dlp on this page" />
+            </StackPanel>
         </ScrollViewer>
     </StackPanel>
 </UserControl>

@@ -1,3 +1,4 @@
+using AJBrowser.Core.Media.YtDlp;
 using System.Collections.ObjectModel;
 using System.Windows.Media;
 using AJBrowser.Browser;
@@ -56,6 +57,8 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.OnlyDownloaded += OnBrowserOnlyDownloaded;
         _browser.MediaChanged += OnBrowserMediaChanged;
         _browser.DownloadVideoRequested += OnBrowserDownloadVideoRequested;
+        _browser.YtDlpRequested += OnBrowserYtDlpRequested;
+        _services.YtDlp.EnabledChanged += OnYtDlpEnabledChanged;
         _services.Bookmarks.Changed += OnBookmarksChanged;
         _services.Favicons.Changed += OnFaviconsChanged;
     }
@@ -658,6 +661,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         {
             _lastUrl = _browser.Url;
             RefreshBookmarkState();
+            RefreshYtDlpState();
 
             // Never change the text while the box has focus: the user may be about to type (or typing) into it,
             // and replacing the text would drop the selection (typing then lands in front of the URL).
@@ -749,10 +753,102 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
     /// <summary>Videos and streams on the current page, for the toolbar picker.</summary>
     public ObservableCollection<DetectedMediaViewModel> Media { get; } = [];
 
-    /// <summary>The toolbar "Videos" button shows only on web pages where something was found.</summary>
-    public bool HasMedia => !IsInternal && Media.Count > 0;
+    /// <summary>The toolbar "Videos" button shows on web pages where something was found, and on yt-dlp video pages.</summary>
+    public bool HasMedia => !IsInternal && (OffersYtDlp || YtDlpVideo is not null || Media.Count > 0);
 
-    public string MediaButtonToolTip => Media.Count == 1 ? "1 video detected on this page" : $"{Media.Count} videos detected on this page";
+    /// <summary>The number on the film button: on a yt-dlp video page that one video, else what was detected (+ a tried yt-dlp row).</summary>
+    public int MediaCount => OffersYtDlp ? 1 : Media.Count + (YtDlpVideo is null ? 0 : 1);
+
+    public string MediaButtonToolTip => OffersYtDlp
+        ? "Download this video (yt-dlp)"
+        : MediaCount == 1 ? "1 video detected on this page" : $"{MediaCount} videos detected on this page";
+
+    // ---------------------------------------------------------------- yt-dlp (Phase 7.5c)
+
+    /// <summary>yt-dlp is on and this is a video page of a platform it handles (YouTube, Instagram…).</summary>
+    public bool OffersYtDlp => !IsInternal && _services.YtDlp.IsEnabled && YtDlpSites.IsVideoPage(CurrentPageUri);
+
+    /// <summary>The picker lists the page's own finds; on yt-dlp video pages those are stream pieces, so only the yt-dlp row shows.</summary>
+    public bool ShowsDetectedMedia => !OffersYtDlp;
+
+    /// <summary>"Try yt-dlp on this page" at the bottom of the picker, for pages not on the list.</summary>
+    public bool CanTryYtDlp => !IsInternal && _services.YtDlp.IsEnabled && !OffersYtDlp && YtDlpVideo is null && CurrentPageUri is not null;
+
+    /// <summary>The yt-dlp row for the current page (null until the picker is opened on a video page, or "Try" was clicked).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMedia), nameof(MediaCount), nameof(MediaButtonToolTip), nameof(CanTryYtDlp))]
+    public partial YtDlpVideoViewModel? YtDlpVideo { get; set; }
+
+    /// <summary>The page asked for the picker (right-click → "Download video with yt-dlp"); the window opens it.</summary>
+    public event EventHandler? VideoPickerRequested;
+
+    private Uri? CurrentPageUri =>
+        Uri.TryCreate(_browser.Url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) ? uri : null;
+
+    /// <summary>
+    /// The window opened the picker: on a yt-dlp video page, read it now (the tab's current address, so a video that
+    /// changed without a page load (YouTube, Instagram) is the one shown). Nothing runs on page visits alone.
+    /// </summary>
+    public void OnVideoPickerOpened()
+    {
+        if (OffersYtDlp && CurrentPageUri is { } page)
+        {
+            EnsureYtDlpRow(page);
+        }
+    }
+
+    [RelayCommand]
+    private void TryYtDlp()
+    {
+        if (CurrentPageUri is { } page)
+        {
+            EnsureYtDlpRow(page);
+        }
+    }
+
+    private void EnsureYtDlpRow(Uri page)
+    {
+        if (YtDlpVideo is { } existing && existing.PageUrl.AbsoluteUri == page.AbsoluteUri)
+        {
+            return;
+        }
+
+        var row = new YtDlpVideoViewModel(page, _services.YtDlp, Title);
+        YtDlpVideo = row;
+        _ = row.InspectAsync();
+    }
+
+    /// <summary>The address changed (also without a page load): a row about another page goes; the button follows the page.</summary>
+    private void RefreshYtDlpState()
+    {
+        if (YtDlpVideo is { } row && row.PageUrl.AbsoluteUri != CurrentPageUri?.AbsoluteUri)
+        {
+            YtDlpVideo = null;
+        }
+
+        OnPropertyChanged(nameof(OffersYtDlp));
+        OnPropertyChanged(nameof(ShowsDetectedMedia));
+        OnPropertyChanged(nameof(CanTryYtDlp));
+        OnPropertyChanged(nameof(HasMedia));
+        OnPropertyChanged(nameof(MediaCount));
+        OnPropertyChanged(nameof(MediaButtonToolTip));
+    }
+
+    private void OnYtDlpEnabledChanged(object? sender, EventArgs e)
+    {
+        if (!_services.YtDlp.IsEnabled)
+        {
+            YtDlpVideo = null;
+        }
+
+        RefreshYtDlpState();
+    }
+
+    private void OnBrowserYtDlpRequested(object? sender, Uri page)
+    {
+        EnsureYtDlpRow(page);
+        VideoPickerRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>Keeps the rows (and their "added" state) stable while the list grows; drops what's gone.</summary>
     private void OnBrowserMediaChanged(object? sender, EventArgs e)
@@ -786,6 +882,7 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         }
 
         OnPropertyChanged(nameof(HasMedia));
+        OnPropertyChanged(nameof(MediaCount));
         OnPropertyChanged(nameof(MediaButtonToolTip));
     }
 
@@ -905,6 +1002,8 @@ public sealed partial class TabViewModel : ObservableObject, IDisposable, IPageH
         _browser.OnlyDownloaded -= OnBrowserOnlyDownloaded;
         _browser.MediaChanged -= OnBrowserMediaChanged;
         _browser.DownloadVideoRequested -= OnBrowserDownloadVideoRequested;
+        _browser.YtDlpRequested -= OnBrowserYtDlpRequested;
+        _services.YtDlp.EnabledChanged -= OnYtDlpEnabledChanged;
         _services.Bookmarks.Changed -= OnBookmarksChanged;
         _services.Favicons.Changed -= OnFaviconsChanged;
         Suggestions.Dispose();

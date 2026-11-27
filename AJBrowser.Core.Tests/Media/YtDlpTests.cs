@@ -282,7 +282,7 @@ public sealed class YtDlpArgumentsTests
     public void Inspect_arguments()
     {
         var args = YtDlpArguments.Inspect(new Uri("https://www.instagram.com/reel/XYZ/"), @"C:\d\deno.exe", null, "UA");
-        Assert.Equal(new[] { "--ignore-config", "--no-playlist", "--no-warnings", "-J", "--js-runtimes", @"deno:C:\d\deno.exe", "--user-agent", "UA", "--", "https://www.instagram.com/reel/XYZ/" }, args);
+        Assert.Equal(new[] { "--ignore-config", "--no-playlist", "-J", "--js-runtimes", @"deno:C:\d\deno.exe", "--user-agent", "UA", "--", "https://www.instagram.com/reel/XYZ/" }, args);
     }
 
     private static string After(IReadOnlyList<string> args, string option) => args[args.ToList().IndexOf(option) + 1];
@@ -351,6 +351,19 @@ public sealed class YtDlpErrorsTests
     [InlineData("ERROR: [youtube] abc: Unable to download webpage: <urlopen error [Errno 11001] getaddrinfo failed>", YtDlpFix.Retry)]
     public void Maps_known_errors(string line, YtDlpFix fix) =>
         Assert.Equal(fix, YtDlpErrors.Explain([line]).Fix);
+
+    [Fact]
+    public void A_missing_javascript_runtime_explains_missing_youtube_formats()
+    {
+        var problem = YtDlpErrors.Explain(
+        [
+            "WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default",
+            "WARNING: [youtube] abc: Some web client https formats have been skipped as they are missing a url.",
+            "ERROR: [youtube] abc: Requested format is not available. Use --list-formats for a list of available formats",
+        ]);
+        Assert.Equal(YtDlpFix.InstallDeno, problem.Fix);
+        Assert.Equal(YtDlpFix.Retry, YtDlpErrors.Explain(["ERROR: [youtube] abc: Requested format is not available."]).Fix); // without the warning
+    }
 
     [Fact]
     public void Private_videos_are_not_mistaken_for_sign_in()
@@ -426,4 +439,49 @@ public sealed class NetscapeCookieFileTests : IDisposable
         Assert.Equal(new[] { "https://www.instagram.com/" }, YtDlpCookieScope.UrlsFor(new Uri("https://www.instagram.com/reel/X/")).Select(u => u.AbsoluteUri));
         Assert.Equal(new[] { "https://evil-youtube.com/" }, YtDlpCookieScope.UrlsFor(new Uri("https://evil-youtube.com/watch")).Select(u => u.AbsoluteUri));
     }
+}
+
+public sealed class YtDlpSitesTests
+{
+    [Theory]
+    [InlineData("https://www.youtube.com/watch?v=aqz-KE-bpKQ", "YouTube")]
+    [InlineData("https://m.youtube.com/watch?feature=share&v=aqz-KE-bpKQ", "YouTube")]
+    [InlineData("https://www.youtube.com/shorts/abcDEF12345", "YouTube")]
+    [InlineData("https://youtu.be/aqz-KE-bpKQ?t=10", "YouTube")]
+    [InlineData("https://www.youtube-nocookie.com/embed/aqz-KE-bpKQ", "YouTube")]
+    [InlineData("https://www.facebook.com/watch/?v=1234567890", "Facebook")]
+    [InlineData("https://www.facebook.com/reel/1234567890", "Facebook")]
+    [InlineData("https://www.facebook.com/SomePage/videos/1234567890/", "Facebook")]
+    [InlineData("https://fb.watch/abcDEF/", "Facebook")]
+    [InlineData("https://www.instagram.com/reel/C1a2B3c4D5e/", "Instagram")]
+    [InlineData("https://www.instagram.com/p/C1a2B3c4D5e/", "Instagram")]
+    [InlineData("https://www.tiktok.com/@some.user/video/7301234567890123456", "TikTok")]
+    [InlineData("https://x.com/someone/status/1790000000000000000", "X")]
+    [InlineData("https://twitter.com/someone/status/1790000000000000000", "X")]
+    [InlineData("https://vimeo.com/76979871", "Vimeo")]
+    [InlineData("https://www.reddit.com/r/videos/comments/abc123/some_title/", "Reddit")]
+    [InlineData("https://www.twitch.tv/videos/1234567890", "Twitch")]
+    [InlineData("https://www.dailymotion.com/video/x8abcde", "Dailymotion")]
+    [InlineData("https://www.bilibili.com/video/BV1xx411c7mD", "Bilibili")]
+    public void Recognises_video_pages(string url, string site) =>
+        Assert.Equal(site, YtDlpSites.SiteOf(new Uri(url)));
+
+    [Theory]
+    [InlineData("https://www.youtube.com/")]
+    [InlineData("https://www.youtube.com/@Blender")]
+    [InlineData("https://www.youtube.com/results?search_query=bunny")]
+    [InlineData("https://www.youtube.com/watch")]
+    [InlineData("https://www.instagram.com/someuser/")]
+    [InlineData("https://www.facebook.com/")]
+    [InlineData("https://x.com/home")]
+    [InlineData("https://vimeo.com/about")]
+    [InlineData("https://evil-youtube.com/watch?v=aqz-KE-bpKQ")]
+    [InlineData("https://youtube.com.evil.example/watch?v=aqz-KE-bpKQ")]
+    [InlineData("https://example.com/watch?v=aqz-KE-bpKQ")]
+    [InlineData("file:///C:/youtube.com/watch?v=aqz-KE-bpKQ")]
+    public void Ignores_other_pages(string url) =>
+        Assert.False(YtDlpSites.IsVideoPage(new Uri(url)));
+
+    [Fact]
+    public void Null_is_not_a_video_page() => Assert.False(YtDlpSites.IsVideoPage(null));
 }

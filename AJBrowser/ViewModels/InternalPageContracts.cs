@@ -41,4 +41,5 @@ public sealed record TabServices(
     FaviconService Favicons,
     Func<InternalPage, IPageHost, IInternalPage> CreatePage,
     MediaDownloadService MediaDownloads,
+    YtDlpService YtDlp,
     AppLogger Log);

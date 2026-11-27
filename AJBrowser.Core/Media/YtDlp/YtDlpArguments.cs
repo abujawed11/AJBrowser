@@ -34,7 +34,8 @@ public static class YtDlpArguments
     public static IReadOnlyList<string> Inspect(Uri pageUrl, string? denoPath, string? cookieFile, string? userAgent)
     {
         RequireHttp(pageUrl);
-        var args = new List<string> { "--ignore-config", "--no-playlist", "--no-warnings", "-J" };
+        // Warnings stay on: "No supported JavaScript runtime" is one, and it explains missing YouTube formats.
+        var args = new List<string> { "--ignore-config", "--no-playlist", "-J" };
         AddCommon(args, denoPath, cookieFile, userAgent);
         args.Add("--");
         args.Add(pageUrl.AbsoluteUri);

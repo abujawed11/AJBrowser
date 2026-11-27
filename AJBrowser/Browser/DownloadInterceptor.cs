@@ -223,7 +223,7 @@ public sealed class DownloadInterceptor : IDisposable
             var item = await _manager.AddBrowserDownloadAsync(operation.Uri, pageUrl, path, operation.TotalBytesToReceive is > 0 and var total ? (long)total : null);
             tracked.Id = item.Id;
             _live[item.Id] = tracked;
-            _log.Info($"Download started: {Redactor.Url(operation.Uri)} → {Path.GetFileName(path)}");
+            _log.Info($"Download started: {Redactor.MediaUrl(operation.Uri)} → {Path.GetFileName(path)}");
             Report(tracked);
             DownloadStarted?.Invoke(this, item.Id);
         }

@@ -64,6 +64,15 @@ public static class YtDlpErrors
     public static YtDlpProblem Explain(IReadOnlyList<string> errorLines)
     {
         var errors = errorLines.Where(l => l.StartsWith("ERROR:", StringComparison.Ordinal)).Reverse().ToList();
+
+        // Without a JavaScript runtime YouTube gives fewer (or no) formats; then "format not available" really means "install Deno".
+        if (MissesJsRuntime(errorLines) && errors.Any(l => l.Contains("format is not available", StringComparison.OrdinalIgnoreCase)
+                                                          || l.Contains("only images are available", StringComparison.OrdinalIgnoreCase)
+                                                          || l.Contains("signature", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Rules.First(r => r.Problem.Fix == YtDlpFix.InstallDeno).Problem;
+        }
+
         foreach (var line in errors.Concat(errorLines.Reverse()))
         {
             var lower = line.ToLowerInvariant();

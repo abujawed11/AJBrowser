@@ -23,8 +23,11 @@ public sealed record YtDlpInspection(YtDlpInfo? Info, YtDlpProblem? Problem);
 /// <see cref="DownloadRequest.VideoTrackId"/>/<see cref="DownloadRequest.AudioTrackId"/> the chosen yt-dlp format ids
 /// (either may be missing), and <see cref="DownloadRequest.TargetPath"/>'s extension the file type of a merge.
 /// <list type="bullet">
-/// <item>Each run gets the browser's current cookies for that site (<see cref="YtDlpCookieScope"/>) in a cookie file in
-/// the job's temp folder, deleted when the run ends, and the browser's user agent.</item>
+/// <item>Cookies only when the site needs them: yt-dlp first runs without the browser's cookies (public videos work
+/// that way, and on YouTube cookies switch yt-dlp to signed-in clients that need more); only when the site answers
+/// "sign in" is the run repeated with the cookies the browser would send (<see cref="YtDlpCookieScope"/>) and the
+/// browser's user agent, and the page is remembered as needing them. The cookie file lives in the job's temp folder and
+/// is deleted when the run ends.</item>
 /// <item>Pause = stop the process (yt-dlp keeps its <c>.part</c> files in the job's temp folder); resume = run the same
 /// command again (yt-dlp continues them). Cancel = <see cref="DeleteTemp"/>.</item>
 /// <item>yt-dlp and what it starts (FFmpeg, Deno) end with AJBrowser (<see cref="ChildProcessJob"/>).</item>
@@ -46,6 +49,7 @@ public sealed class YtDlpDownloader : IStreamDownloader
     private readonly Runner _run;
     private readonly Func<DateTimeOffset> _now;
     private readonly Dictionary<string, (DateTimeOffset At, YtDlpInfo Info)> _cache = [];
+    private readonly HashSet<string> _needsCookies = [];
     private readonly object _cacheLock = new();
 
     /// <param name="tempRoot"><c>%LOCALAPPDATA%\AJBrowser\Temp\ytdlp</c>: one folder per job (and one per inspection).</param>
@@ -85,10 +89,42 @@ public sealed class YtDlpDownloader : IStreamDownloader
             return new YtDlpInspection(null, NotInstalled);
         }
 
+        var useCookies = NeedsCookies(pageUrl);
+        var (info, problem) = await InspectOnceAsync(ytdlp, pageUrl, useCookies, cancellationToken).ConfigureAwait(false);
+        if (info is null && !useCookies && problem?.Fix == YtDlpFix.SignIn)
+        {
+            // The site wants a signed-in visitor: try again as the browser (its cookies and user agent).
+            (info, problem) = await InspectOnceAsync(ytdlp, pageUrl, true, cancellationToken).ConfigureAwait(false);
+            if (info is not null)
+            {
+                RememberNeedsCookies(pageUrl);
+            }
+        }
+
+        if (info is null)
+        {
+            return new YtDlpInspection(null, problem);
+        }
+
+        lock (_cacheLock)
+        {
+            if (_cache.Count >= 20)
+            {
+                _cache.Remove(_cache.MinBy(e => e.Value.At).Key);
+            }
+
+            _cache[key] = (_now(), info);
+        }
+
+        return new YtDlpInspection(info, null);
+    }
+
+    private async Task<(YtDlpInfo? Info, YtDlpProblem? Problem)> InspectOnceAsync(string ytdlp, Uri pageUrl, bool withCookies, CancellationToken cancellationToken)
+    {
         var folder = Path.Combine(_tempRoot, "inspect-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var session = await SafeSessionAsync(pageUrl).ConfigureAwait(false);
+            var session = withCookies ? await SafeSessionAsync(pageUrl).ConfigureAwait(false) : BrowserSession.Empty;
             var cookieFile = session.Cookies.Count > 0 ? NetscapeCookieFile.Write(folder, session.Cookies) : null;
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(InspectTimeout);
@@ -99,43 +135,46 @@ public sealed class YtDlpDownloader : IStreamDownloader
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                return new YtDlpInspection(null, new YtDlpProblem("yt-dlp took too long to read this page. Try again.", YtDlpFix.Retry));
+                return (null, new YtDlpProblem("yt-dlp took too long to read this page. Try again.", YtDlpFix.Retry));
             }
 
             if (!result.Succeeded)
             {
-                return new YtDlpInspection(null, result.ExitCode == -1 ? CouldNotStart : YtDlpErrors.Explain(result.ErrorTail));
+                return (null, result.ExitCode == -1 ? CouldNotStart : YtDlpErrors.Explain(result.ErrorTail));
             }
 
-            YtDlpInfo info;
             try
             {
-                info = YtDlpInfoParser.ParseOutput(result.Output);
+                return (YtDlpInfoParser.ParseOutput(result.Output), null);
             }
             catch (FormatException)
             {
-                return new YtDlpInspection(null, new YtDlpProblem("yt-dlp's answer couldn't be read. Update yt-dlp, then try again.", YtDlpFix.UpdateYtDlp));
+                return (null, new YtDlpProblem("yt-dlp's answer couldn't be read. Update yt-dlp, then try again.", YtDlpFix.UpdateYtDlp));
             }
-
-            lock (_cacheLock)
-            {
-                if (_cache.Count >= 20)
-                {
-                    _cache.Remove(_cache.MinBy(e => e.Value.At).Key);
-                }
-
-                _cache[key] = (_now(), info);
-            }
-
-            return new YtDlpInspection(info, null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return new YtDlpInspection(null, new YtDlpProblem($"Couldn't prepare yt-dlp: {ex.Message}", YtDlpFix.Retry));
+            return (null, new YtDlpProblem($"Couldn't prepare yt-dlp: {ex.Message}", YtDlpFix.Retry));
         }
         finally
         {
             DeleteFolder(folder); // includes the cookie file
+        }
+    }
+
+    private bool NeedsCookies(Uri pageUrl)
+    {
+        lock (_cacheLock)
+        {
+            return _needsCookies.Contains(pageUrl.AbsoluteUri);
+        }
+    }
+
+    private void RememberNeedsCookies(Uri pageUrl)
+    {
+        lock (_cacheLock)
+        {
+            _needsCookies.Add(pageUrl.AbsoluteUri);
         }
     }
 
@@ -176,70 +215,83 @@ public sealed class YtDlpDownloader : IStreamDownloader
 
         var folder = TempFolderFor(jobId);
         var tracker = new YtDlpProgressTracker(selector);
+        var useCookies = NeedsCookies(request.Url);
         try
         {
             Directory.CreateDirectory(folder);
-            var session = await SafeSessionAsync(request.Url).ConfigureAwait(false);
-            var cookieFile = session.Cookies.Count > 0 ? NetscapeCookieFile.Write(folder, session.Cookies) : null;
-            var options = new YtDlpDownloadOptions(
-                request.Url,
-                selector,
-                merges ? MergeFormatFor(request.TargetPath) : null,
-                Path.GetDirectoryName(Path.GetFullPath(request.TargetPath))!,
-                Path.GetFileNameWithoutExtension(request.TargetPath),
-                folder,
-                ffmpeg,
-                _tools.Deno(),
-                cookieFile,
-                session.UserAgent);
-
-            ProcessResult result;
-            try
+            while (true)
             {
-                result = await _run(ytdlp, YtDlpArguments.Download(options), line =>
+                var session = useCookies ? await SafeSessionAsync(request.Url).ConfigureAwait(false) : BrowserSession.Empty;
+                var cookieFile = session.Cookies.Count > 0 ? NetscapeCookieFile.Write(folder, session.Cookies) : null;
+                var options = new YtDlpDownloadOptions(
+                    request.Url,
+                    selector,
+                    merges ? MergeFormatFor(request.TargetPath) : null,
+                    Path.GetDirectoryName(Path.GetFullPath(request.TargetPath))!,
+                    Path.GetFileNameWithoutExtension(request.TargetPath),
+                    folder,
+                    ffmpeg,
+                    _tools.Deno(),
+                    cookieFile,
+                    session.UserAgent);
+
+                ProcessResult result;
+                try
                 {
-                    bool changed;
-                    long received;
-                    long? total;
-                    lock (tracker)
+                    result = await _run(ytdlp, YtDlpArguments.Download(options), line =>
                     {
-                        changed = tracker.Read(line);
-                        received = tracker.Received;
-                        total = tracker.Total;
+                        bool changed;
+                        long received;
+                        long? total;
+                        lock (tracker)
+                        {
+                            changed = tracker.Read(line);
+                            received = tracker.Received;
+                            total = tracker.Total;
+                        }
+
+                        if (changed)
+                        {
+                            progress?.Report(new DownloadProgress(received, total));
+                        }
+                    }, false, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    NetscapeCookieFile.Delete(folder);
+                }
+
+                if (result.ExitCode == -1)
+                {
+                    return Failed(CouldNotStart.Message);
+                }
+
+                if (!result.Succeeded)
+                {
+                    var problem = YtDlpErrors.Explain(result.ErrorTail);
+                    if (problem.Fix == YtDlpFix.SignIn && !useCookies)
+                    {
+                        // Signed-in only: run again as the browser; yt-dlp continues any .part files.
+                        useCookies = true;
+                        RememberNeedsCookies(request.Url);
+                        continue;
                     }
 
-                    if (changed)
-                    {
-                        progress?.Report(new DownloadProgress(received, total));
-                    }
-                }, false, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                NetscapeCookieFile.Delete(folder);
-            }
+                    Forget(request.Url);
+                    return new DownloadResult(DownloadOutcome.Failed, tracker.Received, null, null, problem.Message);
+                }
 
-            if (result.ExitCode == -1)
-            {
-                return Failed(CouldNotStart.Message);
-            }
+                if (tracker.FinalPath is not { } finalPath || !File.Exists(finalPath))
+                {
+                    return Failed("yt-dlp finished, but the file wasn't found. Retry.");
+                }
 
-            if (!result.Succeeded)
-            {
-                Forget(request.Url);
-                return new DownloadResult(DownloadOutcome.Failed, tracker.Received, null, null, YtDlpErrors.Explain(result.ErrorTail).Message);
+                DeleteTemp(jobId);
+                var size = new FileInfo(finalPath).Length;
+                progress?.Report(new DownloadProgress(size, size));
+                return new DownloadResult(DownloadOutcome.Completed, size, size, null, null,
+                    string.Equals(Path.GetFullPath(finalPath), Path.GetFullPath(request.TargetPath), StringComparison.OrdinalIgnoreCase) ? null : finalPath);
             }
-
-            if (tracker.FinalPath is not { } finalPath || !File.Exists(finalPath))
-            {
-                return Failed("yt-dlp finished, but the file wasn't found. Retry.");
-            }
-
-            DeleteTemp(jobId);
-            var size = new FileInfo(finalPath).Length;
-            progress?.Report(new DownloadProgress(size, size));
-            return new DownloadResult(DownloadOutcome.Completed, size, size, null, null,
-                string.Equals(Path.GetFullPath(finalPath), Path.GetFullPath(request.TargetPath), StringComparison.OrdinalIgnoreCase) ? null : finalPath);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -29,6 +29,11 @@ public partial class MainWindow : Window
 
         _viewModel.FocusAddressBarRequested += OnFocusAddressBarRequested;
         _viewModel.CloseWindowRequested += OnCloseWindowRequested;
+        _viewModel.VideoPickerRequested += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            VideosPopup.IsOpen = true;
+            VideosPopup.Child?.Focus();
+        }, System.Windows.Threading.DispatcherPriority.Input);
         Closing += OnWindowClosing;
         Application.Current.SessionEnding += OnSessionEnding;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -535,6 +540,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        _viewModel.SelectedTab?.OnVideoPickerOpened();
         VideosPopup.IsOpen = true;
     }
 

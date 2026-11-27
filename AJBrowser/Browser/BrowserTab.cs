@@ -48,8 +48,10 @@ public sealed class BrowserTab : IDisposable
     private bool _hasCommittedPage;
     private bool _disposed;
 
-    public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, DownloadInterceptor downloads, ThemeService theme, Func<bool> detectVideos, AppLogger log)
+    /// <param name="ytDlpEnabled">Settings → "Big video sites (yt-dlp)": adds "Download video with yt-dlp" to the page's right-click menu.</param>
+    public BrowserTab(BrowserEnvironment environment, ExtensionManager extensions, DownloadInterceptor downloads, ThemeService theme, Func<bool> detectVideos, AppLogger log, Func<bool>? ytDlpEnabled = null)
     {
+        _ytDlpEnabled = ytDlpEnabled ?? (() => false);
         _environment = environment;
         _extensions = extensions;
         _downloads = downloads;
@@ -271,6 +273,11 @@ public sealed class BrowserTab : IDisposable
 
     /// <summary>"Download video" was chosen on a &lt;video&gt;/&lt;audio&gt; element with a real (non-blob) address.</summary>
     public event EventHandler<Uri>? DownloadVideoRequested;
+
+    /// <summary>"Download video with yt-dlp" was chosen in the right-click menu of this page (Phase 7.5c).</summary>
+    public event EventHandler<Uri>? YtDlpRequested;
+
+    private readonly Func<bool> _ytDlpEnabled;
 
     // ---------------------------------------------------------------- creating the WebView
 
@@ -638,6 +645,7 @@ public sealed class BrowserTab : IDisposable
         }
 
         var target = e.ContextMenuTarget;
+        AddYtDlpItem(target, items);
         AddDownloadVideoItem(target, items);
 
         if (_attachedEnvironment is null
@@ -674,6 +682,26 @@ public sealed class BrowserTab : IDisposable
         var label = target.Kind == CoreWebView2ContextMenuTargetKind.Audio ? "Download audio with AJBrowser" : "Download video with AJBrowser";
         var item = _attachedEnvironment.CreateContextMenuItem(label, null, CoreWebView2ContextMenuItemKind.Command);
         item.CustomItemSelected += (_, _) => _host.Dispatcher.BeginInvoke(() => DownloadVideoRequested?.Invoke(this, source));
+        items.Insert(0, item);
+    }
+
+    /// <summary>
+    /// Right-click on the page itself or on a video (including streaming players, whose blob: sources aren't files):
+    /// "Download video with yt-dlp" opens the picker with yt-dlp reading this page. Only when yt-dlp downloads are on,
+    /// and only for web pages (not links, selected text or form fields, which have their own menus).
+    /// </summary>
+    private void AddYtDlpItem(CoreWebView2ContextMenuTarget target, IList<CoreWebView2ContextMenuItem> items)
+    {
+        if (_attachedEnvironment is null || !_ytDlpEnabled() || target.HasLinkUri || target.IsEditable || target.HasSelection
+            || target.Kind is not (CoreWebView2ContextMenuTargetKind.Page or CoreWebView2ContextMenuTargetKind.Video or CoreWebView2ContextMenuTargetKind.Audio)
+            || !Uri.TryCreate(target.PageUri, UriKind.Absolute, out var page)
+            || (page.Scheme != Uri.UriSchemeHttps && page.Scheme != Uri.UriSchemeHttp))
+        {
+            return;
+        }
+
+        var item = _attachedEnvironment.CreateContextMenuItem("Download video with yt-dlp", null, CoreWebView2ContextMenuItemKind.Command);
+        item.CustomItemSelected += (_, _) => _host.Dispatcher.BeginInvoke(() => YtDlpRequested?.Invoke(this, page));
         items.Insert(0, item);
     }
 

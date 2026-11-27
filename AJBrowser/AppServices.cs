@@ -78,6 +78,7 @@ public sealed class AppServices : IDisposable
         Downloads = new DownloadsViewModel(DownloadManager, DownloadInterceptor, shell, settings, CreateLogger(nameof(DownloadsViewModel)));
 
         MediaDownloads = new MediaDownloadService(DownloadManager, Hls, Dash, _namer, settings, FfmpegPath, AskSavePath, CreateLogger(nameof(MediaDownloadService)));
+        YtDlpVideos = new YtDlpService(YtDlp, Tools, MediaDownloads, settings);
 
         _tabServices = new TabServices(
             AddressResolver,
@@ -87,6 +88,7 @@ public sealed class AppServices : IDisposable
             Favicons,
             CreatePage,
             MediaDownloads,
+            YtDlpVideos,
             CreateLogger(nameof(TabViewModel)));
 
         Settings.Changed += OnSettingsChanged;
@@ -127,6 +129,9 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Video downloads through yt-dlp for YouTube, Facebook, Instagram… (Phase 7.5).</summary>
     public Core.Media.YtDlp.YtDlpDownloader YtDlp { get; }
+
+    /// <summary>The picker's yt-dlp side: on/off, reading pages, quality rows, starting downloads (Phase 7.5c).</summary>
+    public YtDlpService YtDlpVideos { get; }
 
     /// <summary>The FFmpeg to use right now (Settings path, AJBrowser's copy, or the PATH), or null.</summary>
     public string? FfmpegPath() => Tools.Locate(Core.Tools.ToolKind.Ffmpeg);
@@ -187,7 +192,7 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Creates a tab (WebView wrapper + its view model). Not started yet: call <see cref="TabViewModel.StartAsync"/>.</summary>
     public TabViewModel CreateTab() =>
-        new(new BrowserTab(Browser, Extensions, DownloadInterceptor, Theme, () => Settings.Current.DetectVideos, CreateLogger(nameof(BrowserTab))), _tabServices);
+        new(new BrowserTab(Browser, Extensions, DownloadInterceptor, Theme, () => Settings.Current.DetectVideos, CreateLogger(nameof(BrowserTab)), () => Settings.Current.YtDlpEnabled), _tabServices);
 
     /// <summary>Creates the view model of an internal page for the tab that will show it.</summary>
     private IInternalPage CreatePage(InternalPage page, IPageHost host) => page switch

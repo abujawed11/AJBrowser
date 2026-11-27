@@ -133,6 +133,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>The last tab was closed: the window should close.</summary>
     public event EventHandler? CloseWindowRequested;
 
+    /// <summary>The selected tab asked for the "Videos on this page" picker (right-click → yt-dlp, Phase 7.5c).</summary>
+    public event EventHandler? VideoPickerRequested;
+
+    private void OnTabVideoPickerRequested(object? sender, EventArgs e)
+    {
+        if (ReferenceEquals(sender, SelectedTab))
+        {
+            VideoPickerRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     // ---------------------------------------------------------------- startup
 
     /// <summary>
@@ -216,6 +227,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         tab.PopupRequested += OnTabPopupRequested;
         tab.CloseRequested += OnTabCloseRequested;
         tab.OnlyDownloaded += OnTabOnlyDownloaded;
+        tab.VideoPickerRequested += OnTabVideoPickerRequested;
         tab.PropertyChanged += OnTabPropertyChanged;
 
         Tabs.Insert(Math.Clamp(position, 0, Tabs.Count), tab);
@@ -435,6 +447,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         tab.PopupRequested -= OnTabPopupRequested;
         tab.CloseRequested -= OnTabCloseRequested;
         tab.OnlyDownloaded -= OnTabOnlyDownloaded;
+        tab.VideoPickerRequested -= OnTabVideoPickerRequested;
         tab.PropertyChanged -= OnTabPropertyChanged;
         tab.Dispose(); // a WebView that still owns downloads is kept until they finish (DownloadInterceptor.Park)
 

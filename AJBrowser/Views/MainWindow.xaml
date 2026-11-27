@@ -417,7 +417,7 @@
                             AutomationProperties.Name="Videos on this page">
                         <StackPanel Orientation="Horizontal" Margin="8,0">
                             <TextBlock Text="&#xE714;" VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
-                            <TextBlock Text="{Binding Media.Count}" Margin="6,0,0,0" VerticalAlignment="Center"
+                            <TextBlock Text="{Binding MediaCount}" Margin="6,0,0,0" VerticalAlignment="Center"
                                        FontFamily="{StaticResource UiFontFamily}" FontSize="{StaticResource CaptionFontSize}"
                                        FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" />
                         </StackPanel>

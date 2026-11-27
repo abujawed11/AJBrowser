@@ -55,6 +55,12 @@ public sealed class YtDlpDownloaderTests : IDisposable
         string? cookieText = null;
         _behaviour = (args, onOutput, _) =>
         {
+            if (!args.Contains("--cookies"))
+            {
+                // A public run first; this video wants a signed-in visitor.
+                return Task.FromResult(new ProcessResult(1, [], ["ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users."]));
+            }
+
             cookieText = File.ReadAllText(After(args, "--cookies"));
             onOutput!("[youtube] abc123XYZ00: Downloading webpage");
             onOutput("ajb-progress 50 100 NA 1000 1 137");
@@ -73,7 +79,10 @@ public sealed class YtDlpDownloaderTests : IDisposable
         Assert.Equal(DownloadOutcome.Completed, result.Outcome);
         Assert.Null(result.FinalPath); // the planned name
         Assert.Equal(120, result.ReceivedBytes);
-        var args = _calls.Single();
+        Assert.Equal(2, _calls.Count);
+        Assert.DoesNotContain("--cookies", _calls[0]); // cookies only once the site asked for sign-in
+        Assert.DoesNotContain("--user-agent", _calls[0]);
+        var args = _calls[1];
         Assert.Equal("137+140", After(args, "-f"));
         Assert.Equal("webm", After(args, "--merge-output-format")); // from the target's extension
         Assert.Equal(@"C:\tools\ffmpeg.exe", After(args, "--ffmpeg-location"));
@@ -173,7 +182,7 @@ public sealed class YtDlpDownloaderTests : IDisposable
     {
         _behaviour = (args, _, _) =>
         {
-            Assert.True(File.Exists(After(args, "--cookies")));
+            Assert.DoesNotContain("--cookies", args); // a public page needs no cookies
             return Task.FromResult(new ProcessResult(0, [YtDlpFixtures.YouTube()], []));
         };
         var downloader = Create();
@@ -185,11 +194,56 @@ public sealed class YtDlpDownloaderTests : IDisposable
         Assert.Same(first.Info, second.Info);
         Assert.Single(_calls); // cached
         Assert.Contains("-J", _calls[0]);
-        Assert.Empty(Directory.GetDirectories(Path.Combine(_root, "temp"))); // the inspection folder (with cookies) is gone
+        var temp = Path.Combine(_root, "temp");
+        Assert.True(!Directory.Exists(temp) || Directory.GetDirectories(temp).Length == 0); // no inspection folder left
 
         downloader.Forget(Page);
         await downloader.InspectAsync(Page);
         Assert.Equal(2, _calls.Count);
+    }
+
+    [Fact]
+    public async Task A_sign_in_answer_retries_with_the_browsers_cookies_and_remembers_it()
+    {
+        _behaviour = (args, onOutput, _) =>
+        {
+            if (!args.Contains("--cookies"))
+            {
+                return Task.FromResult(new ProcessResult(1, [], ["ERROR: [instagram] X: Requested content is not available, rate-limit reached or login required. Use --cookies"]));
+            }
+
+            Assert.True(File.Exists(After(args, "--cookies")));
+            Assert.Equal("Mozilla/5.0 AJ", After(args, "--user-agent"));
+            if (args.Contains("-J"))
+            {
+                return Task.FromResult(new ProcessResult(0, [YtDlpFixtures.YouTube()], []));
+            }
+
+            File.WriteAllText(Target("reel.mp4"), "x");
+            onOutput!("ajb-file:" + Target("reel.mp4"));
+            return Task.FromResult(new ProcessResult(0, [], []));
+        };
+        var downloader = Create();
+
+        var inspection = await downloader.InspectAsync(Page);
+        Assert.NotNull(inspection.Info);
+        Assert.Equal(2, _calls.Count); // public try, then as the browser
+        Assert.Empty(Directory.GetDirectories(Path.Combine(_root, "temp"))); // no cookie file left behind
+
+        var result = await downloader.DownloadAsync(3, Request(Target("reel.mp4"), "18", null), null, CancellationToken.None);
+        Assert.Equal(DownloadOutcome.Completed, result.Outcome);
+        Assert.Equal(3, _calls.Count); // the download went straight to cookies (remembered)
+        Assert.Contains("--cookies", _calls[2]);
+    }
+
+    [Fact]
+    public async Task Without_sign_in_trouble_cookies_are_never_read()
+    {
+        var sessionCalls = 0;
+        _session = _ => { sessionCalls++; return Task.FromResult(BrowserSession.Empty); };
+        _behaviour = (_, _, _) => Task.FromResult(new ProcessResult(0, [YtDlpFixtures.YouTube()], []));
+        await Create().InspectAsync(Page);
+        Assert.Equal(0, sessionCalls);
     }
 
     [Fact]

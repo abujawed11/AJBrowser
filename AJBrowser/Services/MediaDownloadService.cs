@@ -236,6 +236,38 @@ public sealed class MediaDownloadService
         }
     }
 
+    /// <summary>
+    /// A video through yt-dlp (Phase 7.5c): file name from the video's title and quality with the row's real type,
+    /// the folder from Settings (or Save as…), and a <see cref="DownloadSource.YtDlp"/> job for the page with the
+    /// chosen format ids. No headers or cookies are stored: yt-dlp gets the browser's cookies when each run starts.
+    /// </summary>
+    public async Task<MediaDownloadOutcome> StartYtDlpAsync(Uri page, string title, Core.Media.YtDlp.YtDlpQualityRow row, bool saveAs)
+    {
+        var stem = FileNamer.Sanitize(title.Length > 150 ? title[..150] : title);
+        var name = row.IsAudioOnly || row.Height is null ? $"{stem}.{row.OutputExtension}" : $"{stem} {row.Height}p.{row.OutputExtension}";
+        var folder = DownloadFolder();
+        if (!ChooseLocation(ref folder, ref name, saveAs))
+        {
+            return MediaDownloadOutcome.Cancelled;
+        }
+
+        var path = _namer.ReservePath(folder, name);
+        try
+        {
+            var item = await _manager.EnqueueAsync(
+                new DownloadRequest(page, path, null, DownloadSource.YtDlp, null, row.VideoFormatId, row.AudioFormatId),
+                page.AbsoluteUri);
+            _log.Info($"yt-dlp download queued: {Redactor.Url(page)} (formats {row.FormatSelector}) → {Path.GetFileName(path)}");
+            return new MediaDownloadOutcome(item, null);
+        }
+        catch (Exception ex)
+        {
+            _namer.Release(path);
+            _log.Error("Could not start a yt-dlp download", ex);
+            return new MediaDownloadOutcome(null, "Couldn't start the download (details in the log).");
+        }
+    }
+
     /// <summary>The user's language for choosing a sound track ("en-IN" matches English tracks).</summary>
     private static string PreferredLanguage => System.Globalization.CultureInfo.CurrentUICulture.Name;
 

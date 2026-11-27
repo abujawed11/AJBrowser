@@ -125,7 +125,11 @@ public static partial class Redactor
         return digits >= 2 && letters >= 2;
     }
 
-    /// <summary>Redacts sensitive header values, bearer tokens and URLs found anywhere in free text.</summary>
+    /// <summary>
+    /// Redacts sensitive header values, bearer tokens and URLs found anywhere in free text. URLs go through
+    /// <see cref="MediaUrl"/>: besides the query, long or opaque path segments (tokens such as signed JWTs that CDNs and
+    /// file hosts put in the path, plan F12) are replaced too.
+    /// </summary>
     public static string Text(string? text)
     {
         if (string.IsNullOrEmpty(text))
@@ -135,7 +139,7 @@ public static partial class Redactor
 
         var result = SensitiveHeaderRegex().Replace(text, m => $"{m.Groups["name"].Value}{m.Groups["sep"].Value}{Marker}");
         result = BearerRegex().Replace(result, "Bearer " + Marker);
-        result = UrlRegex().Replace(result, m => Url(m.Value));
+        result = UrlRegex().Replace(result, m => MediaUrl(m.Value));
         return result;
     }
 
